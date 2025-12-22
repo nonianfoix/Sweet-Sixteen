@@ -12,6 +12,13 @@ interface AlumniTabProps {
 type SortField = 'name' | 'graduationSeason' | 'donationTier' | 'sentiment';
 type SortDirection = 'asc' | 'desc';
 
+const formatNetWorth = (earnings: number): string => {
+    if (earnings >= 1_000_000_000) return `$${(earnings / 1_000_000_000).toFixed(1)}B`;
+    if (earnings >= 1_000_000) return `$${(earnings / 1_000_000).toFixed(1)}M`;
+    if (earnings >= 1_000) return `$${(earnings / 1000).toFixed(0)}k`;
+    return `$${earnings}`;
+};
+
 const AlumniTab: React.FC<AlumniTabProps> = ({ state, userTeam, dispatch, colors }) => {
     const [sortField, setSortField] = useState<SortField>('graduationSeason');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -26,7 +33,7 @@ const AlumniTab: React.FC<AlumniTabProps> = ({ state, userTeam, dispatch, colors
     };
 
     const archetypeCounts = useMemo(() => {
-        const counts: Record<AlumniArchetype, number> = { Tech: 0, Finance: 0, Local: 0, Political: 0 };
+        const counts: Record<AlumniArchetype, number> = { Tech: 0, Finance: 0, Local: 0, Political: 0, Health: 0, Arts: 0 };
         userTeam.alumniRegistry?.allAlumni.forEach(a => {
             if (counts[a.archetype] !== undefined) counts[a.archetype]++;
         });
@@ -379,6 +386,16 @@ const AlumniTab: React.FC<AlumniTabProps> = ({ state, userTeam, dispatch, colors
                                     <strong>Local:</strong> +{activeInfluence.mediaProtection}% Media Protection
                                 </div>
                             )}
+                            {activeInfluence.medicalEfficiency > 0 && (
+                                <div style={{color: '#e91e63'}}>
+                                    <strong>Health:</strong> +{activeInfluence.medicalEfficiency}% Medical Efficiency
+                                </div>
+                            )}
+                            {activeInfluence.fanAppeal > 0 && (
+                                <div style={{color: '#9c27b0'}}>
+                                    <strong>Arts:</strong> +{activeInfluence.fanAppeal}% Fan Appeal
+                                </div>
+                            )}
                             {Object.keys(activeInfluence.recruitingBonus).length > 0 && (
                                 <div style={{color: '#607d8b', marginTop: '0.5rem'}}>
                                     <strong>Pipeline Bonuses:</strong>
@@ -475,7 +492,7 @@ const AlumniTab: React.FC<AlumniTabProps> = ({ state, userTeam, dispatch, colors
                                                            alum.donationTier === 'medium' ? '#2196f3' : '#9e9e9e',
                                                     fontWeight: 'bold'
                                                 }}>
-                                                    {alum.donationTier.toUpperCase()}
+                                                    {formatNetWorth(alum.careerEarnings)}
                                                 </span>
                                             </td>
                                             <td style={styles.td}>

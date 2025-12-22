@@ -1,13 +1,51 @@
 import { AlumniProfile, AlumniRegistry, Player, Team, GameState, AlumniArchetype, DonorDilemma, EquityPool } from '../types';
 import { FIRST_NAMES, LAST_NAMES, ACTIVE_NBA_PLAYERS_DATA, FEMALE_FIRST_NAMES } from '../constants';
 import { REAL_NBA_PLAYERS } from '../data/realNbaPlayers';
+import { SCHOOL_INSTITUTIONAL_PROFILES } from '../data/institutional_harvester/school_profiles.nokey.generated';
+import { BILLIONAIRE_ALMA_MATERS, TITAN_EARNINGS_RANGE } from '../data/billionaire_schools';
 
 const randomBetween = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-const PROFESSIONS = ['Business', 'Finance', 'Tech', 'Medicine', 'Law', 'Coaching', 'Media', 'Entrepreneur', 'Education', 'Public Service'];
+const PROFESSIONS = ['Business', 'Finance', 'Tech', 'Medicine', 'Law', 'Coaching', 'Media', 'Entrepreneur', 'Education', 'Public Service', 'Arts'];
 
-const generateProfession = (prestige: number): string => {
+const generateProfession = (prestige: number, teamName?: string): string => {
+    // 1. Try to use scraped data profile
+    if (teamName && SCHOOL_INSTITUTIONAL_PROFILES[teamName]?.archetypeWeights) {
+        const weights = SCHOOL_INSTITUTIONAL_PROFILES[teamName].archetypeWeights!;
+        const rand = Math.random() * 100;
+        let cumulative = 0;
+
+        // Map weights to professions (approximate mapping)
+        // tech_students -> Tech
+        cumulative += (weights['tech_students'] || 0);
+        if (rand < cumulative) return 'Tech';
+
+        // finance_business_students -> Business, Finance, Entrepreneur
+        cumulative += (weights['finance_business_students'] || 0);
+        if (rand < cumulative) return pickRandom(['Business', 'Finance', 'Entrepreneur']);
+
+        // health_med_students -> Medicine
+        cumulative += (weights['health_med_students'] || 0);
+        if (rand < cumulative) return 'Medicine';
+
+        // law_students -> Law, Political
+        cumulative += (weights['law_students'] || 0);
+        if (rand < cumulative) return pickRandom(['Law', 'Public Service']);
+
+        // education_students -> Education, Coaching
+        cumulative += (weights['education_students'] || 0);
+        if (rand < cumulative) return pickRandom(['Education', 'Coaching']);
+
+        // arts_media_students -> Media, Arts
+        cumulative += (weights['arts_media_students'] || 0);
+        if (rand < cumulative) return pickRandom(['Media', 'Arts']);
+
+        // general_liberal_arts -> Spread across others
+        return pickRandom(['Public Service', 'Education', 'Business', 'Arts']);
+    }
+
+    // 2. Fallback to legacy prestige-based logic
     const roll = Math.random();
     if (prestige > 80) {
         if (roll < 0.3) return 'Finance';
@@ -19,15 +57,32 @@ const generateProfession = (prestige: number): string => {
 };
 
 const determineArchetype = (sentiment: number, wealth: number, profession: string, proStatus: string): AlumniArchetype => {
-    if (proStatus === 'drafted' || proStatus === 'pro_success') return 'Local'; // Local Legends
+    if (wealth > 95 && profession !== 'Pro Athlete') return 'Titan'; // Ultra-wealthy non-athlete
+    if (proStatus === 'drafted' || proStatus === 'pro_success') return 'Local'; 
     if (profession === 'Tech') return 'Tech';
-    if (profession === 'Finance' || profession === 'Business') return 'Finance';
+    if (profession === 'Finance' || profession === 'Business' || profession === 'Entrepreneur') return 'Finance';
     if (profession === 'Public Service' || profession === 'Law') return 'Political';
+    if (profession === 'Medicine') return 'Health';
+    if (profession === 'Media' || profession === 'Arts') return 'Arts';
     
     // Fallback based on wealth/sentiment
     if (wealth > 80) return 'Finance';
     if (sentiment > 80) return 'Local';
-    return 'Local'; // Default to Local (Supporter equivalent)
+    return 'Local'; 
+};
+
+// Initial Active Influence State
+const INITIAL_INFLUENCE: AlumniInfluence = {
+    recruitingBonus: {},
+    mediaProtection: 0,
+    facilitySpeed: 0,
+    scoutingEfficiency: 0,
+    endowmentYield: 0,
+    academicPrestigeBonus: 0,
+    jobSecurityBonus: 0,
+    medicalEfficiency: 0,
+    fanAppeal: 0,
+    titanBonus: 0
 };
 
 const DILEMMA_TEMPLATES: {
@@ -103,6 +158,40 @@ const DILEMMA_TEMPLATES: {
                 consequences: { facilitySpeed: -5, alumniSentiment: -2 } 
             }
         ]
+    },
+    {
+        title: "Medical Wing Naming",
+        description: "A 'Health' system CEO offers to renovate the training room, but wants it named after their controversial company.",
+        archetype: 'Health',
+        options: [
+            { 
+                label: "Accept Renovation", 
+                effectDescription: "+Facility Speed, -Integrity", 
+                consequences: { facilitySpeed: 15, integrity: -5, alumniSentiment: 5 } 
+            },
+            { 
+                label: "Refuse", 
+                effectDescription: "Status Quo", 
+                consequences: { alumniSentiment: -2 } 
+            }
+        ]
+    },
+    {
+        title: "Viral Uniform Concept",
+        description: "An 'Arts' alumnus designed a wild new alternate jersey that's trending online.",
+        archetype: 'Arts',
+        options: [
+            { 
+                label: "Wear Them", 
+                effectDescription: "+Momentum, -Traditionalist Sentiment", 
+                consequences: { donorMomentum: 15, alumniSentiment: -5 } 
+            },
+            { 
+                label: "Stick to School Colors", 
+                effectDescription: "+Local Sentiment", 
+                consequences: { alumniSentiment: 5 } 
+            }
+        ]
     }
 ];
 
@@ -160,16 +249,64 @@ export const generateAlumni = (player: Player, team: Team, graduationSeason: num
     }
     
     let careerEarnings = 0;
+    const currentYear = new Date().getFullYear();
+    const yearsSinceGrad = Math.max(1, currentYear - graduationSeason); // Approximation if graduationSeason is effectively year
+
     if (forceEarnings) {
         careerEarnings = forceEarnings;
     } else {
         if (proStatus === 'drafted') careerEarnings = randomBetween(5000000, 100000000);
         else if (proStatus === 'overseas') careerEarnings = randomBetween(200000, 2000000);
-        else careerEarnings = randomBetween(50000, 500000); 
+        else {
+            // Check for Billionaire (Titan) Probability
+            const titanChance = BILLIONAIRE_ALMA_MATERS[team.name] || 0.0001; // Tiny base chance for everyone
+            if (Math.random() < titanChance) {
+                // TITAN GENERATED
+                careerEarnings = randomBetween(TITAN_EARNINGS_RANGE.min, TITAN_EARNINGS_RANGE.max);
+            } else {
+                // Use real institutional data if available
+                const schoolProfile = SCHOOL_INSTITUTIONAL_PROFILES[team.name];
+                if (schoolProfile?.medianEarnings10yr) {
+                    // Base: Median Earnings * Years (up to 30 years)
+                    const earningPower = schoolProfile.medianEarnings10yr;
+                    careerEarnings = earningPower * Math.min(30, yearsSinceGrad);
+
+                    // Penalty: Student Debt (highest impact early in career)
+                    if (yearsSinceGrad < 12 && schoolProfile.gradDebtMedian) {
+                        careerEarnings -= schoolProfile.gradDebtMedian * 2; // Debt counts double against "liquid wealth"
+                    }
+
+                    // Random variance (0.5x to 2.0x) - some people strike it rich
+                    careerEarnings *= (0.5 + Math.random() * 1.5);
+                } else {
+                     careerEarnings = randomBetween(50000, 500000); 
+                }
+            }
+        }
     }
 
-    const profession = proStatus !== 'none' ? 'Pro Athlete' : generateProfession(prestigeAtGrad);
-    const wealthScore = Math.min(100, Math.round((careerEarnings / 1000000) * 10) + randomBetween(0, 20));
+    // Determine Profession (Titan overrides)
+    let profession = proStatus !== 'none' ? 'Pro Athlete' : generateProfession(prestigeAtGrad, team.name);
+    if (careerEarnings > 100000000 && proStatus === 'none') {
+        profession = 'Entrepreneur'; // Titans are usually entrepreneurs
+    }
+    
+    // Recalculate Wealth Score with new inputs
+    let wealthScore = Math.min(100, Math.round((careerEarnings / 1000000) * 10) + randomBetween(0, 5));
+    // Titans break the scale, capped at 100 for UI but internal wealth is high
+    
+    // Apply City Wealth Bonus for Locals
+    const schoolProfile = SCHOOL_INSTITUTIONAL_PROFILES[team.name];
+    if (profession !== 'Pro Athlete' && schoolProfile?.cityMedianHouseholdIncome && wealthScore < 90) {
+        // High cost of living cities (San Jose, etc) assumed to mean higher disposable income for elite 'Local' boosters
+        if (schoolProfile.cityMedianHouseholdIncome > 75000) {
+            wealthScore += 10;
+        } else if (schoolProfile.cityMedianHouseholdIncome < 40000) {
+            wealthScore -= 5;
+        }
+    }
+    
+    wealthScore = Math.max(0, Math.min(100, wealthScore));
     
     const archetype = determineArchetype(sentiment, wealthScore, profession, proStatus);
     const donationTier = wealthScore > 80 ? 'high' : wealthScore > 40 ? 'medium' : wealthScore > 10 ? 'low' : 'none';
@@ -194,15 +331,7 @@ export const updateAlumniRegistry = (registry: AlumniRegistry | undefined, newAl
     const existing = registry || { 
         summaryStats: { countsPerProfession: {}, donationMomentum: 0, notableAlumni: [] }, 
         allAlumni: [],
-        activeInfluence: {
-            recruitingBonus: {},
-            mediaProtection: 0,
-            facilitySpeed: 0,
-            scoutingEfficiency: 0,
-            endowmentYield: 0,
-            academicPrestigeBonus: 0,
-            jobSecurityBonus: 0
-        },
+        activeInfluence: { ...INITIAL_INFLUENCE },
         equityPools: []
     };
     
@@ -234,6 +363,10 @@ export const updateAlumniRegistry = (registry: AlumniRegistry | undefined, newAl
         // For simplicity, let's say Political alumni boost their home state (if we had it) or just a random pipeline state
     } else if (newAlumni.archetype === 'Local') {
         activeInfluence.mediaProtection = Math.min(100, activeInfluence.mediaProtection + 1);
+    } else if (newAlumni.archetype === 'Health') {
+        activeInfluence.medicalEfficiency = Math.min(100, activeInfluence.medicalEfficiency + 1);
+    } else if (newAlumni.archetype === 'Arts') {
+        activeInfluence.fanAppeal = Math.min(100, activeInfluence.fanAppeal + 1);
     }
 
     // NBA Alumni Bonus (Wealth & Fame)
@@ -404,7 +537,9 @@ export const generateHistoricalAlumni = (team: Team): AlumniRegistry => {
             scoutingEfficiency: 0,
             endowmentYield: 0,
             academicPrestigeBonus: 0,
-            jobSecurityBonus: 0
+            jobSecurityBonus: 0,
+            medicalEfficiency: 0,
+            fanAppeal: 0
         },
         equityPools: []
     };
@@ -425,7 +560,9 @@ export const recalculateAlumniInfluence = (registry: AlumniRegistry): AlumniRegi
             scoutingEfficiency: 0,
             endowmentYield: 0,
             academicPrestigeBonus: 0,
-            jobSecurityBonus: 0
+            jobSecurityBonus: 0,
+            medicalEfficiency: 0,
+            fanAppeal: 0
         }
     };
 
@@ -446,3 +583,151 @@ export const recalculateAlumniInfluence = (registry: AlumniRegistry): AlumniRegi
 
 // Alias for backward compatibility if needed, or just remove
 export const generateBaselineAlumniRegistry = generateHistoricalAlumni;
+
+export const seedAlumniRegistry = (team: Team): AlumniRegistry => {
+    // Start with empty registry
+    let registry: AlumniRegistry = { 
+        summaryStats: { countsPerProfession: {}, donationMomentum: 0, notableAlumni: [] }, 
+        allAlumni: [],
+        activeInfluence: { ...INITIAL_INFLUENCE },
+        equityPools: []
+    };
+
+    // Calculate how many pre-existing Titans to generate
+    const titanChance = BILLIONAIRE_ALMA_MATERS[team.name] || 0;
+    
+    // We simulate a "History" of ~1000 notable alumni to seed the registry
+    // Tier 1 (2.5%) -> 25 Titans immediately available
+    const HISTORY_SIZE = 1000;
+    const numTitans = Math.round(HISTORY_SIZE * titanChance);
+    
+    if (numTitans > 0) {
+        for (let i = 0; i < numTitans; i++) {
+             const gradYear = randomBetween(1980, 2015);
+             const mockPlayer: Player = {
+                 id: `seed-titan-${i}`,
+                 name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+                 position: 'PG', 
+                 height: 75,
+                 year: 'Sr',
+                 overall: 50,
+                 potential: 50,
+                 stats: {} as any, 
+                 starterPosition: null, 
+                 startOfSeasonOverall: 50,
+                 draftProjection: 'Undrafted', 
+                 team: team.name, 
+                 yos: 2025 - gradYear,
+                 gamesPlayed: 0,
+                 minutesPerGame: 0,
+                 pointsPerGame: 0,
+                 reboundsPerGame: 0,
+                 assistsPerGame: 0,
+                 stealsPerGame: 0,
+                 blocksPerGame: 0,
+                 fieldGoalPercentage: 0,
+                 threePointPercentage: 0,
+                 freeThrowPercentage: 0,
+                 contract: { salary: 0, yearsLeft: 0 },
+                 injury: null,
+                 gameLog: [],
+                 clutchFactor: 0,
+                 consistency: 0,
+                 durability: 0,
+                 hometown: 'Unknown',
+                 state: 'Unknown',
+                 personality: { 
+                    leadership: 50, workEthic: 50, loyalty: 50, clutch: 50,
+                    ambition: 50, ego: 50, adaptability: 50, pressure: 50
+                 },
+                 badges: []
+             };
+             
+             // Force Titan status by overriding earnings
+             const earnings = randomBetween(TITAN_EARNINGS_RANGE.min, TITAN_EARNINGS_RANGE.max);
+             const alum = generateAlumni(mockPlayer, team, gradYear, 'none', earnings);
+             
+             // Ensure Archetype is Titan (handled by determineArchetype via wealth)
+             // But force profession to Entrepreneur if needed
+             if (alum.archetype !== 'Titan') {
+                 // Should not happen if wealth > 500M, but just in case
+             }
+             
+             registry = updateAlumniRegistry(registry, alum);
+        }
+    }
+    
+    return registry;
+};
+
+// Annual wealth appreciation logic
+export const processAlumniWealthGrowth = (registry: AlumniRegistry): AlumniRegistry => {
+    const updatedAlumni = registry.allAlumni.map(alum => {
+        // Base growth rate by tier
+        let growthRate = 0.02; // Inflation default
+        let volatility = 0.05; // Standard dev
+
+        if (alum.archetype === 'Titan') {
+            growthRate = 0.08; // 8% avg return on massive capital
+            volatility = 0.15; // High volatility
+        } else if (alum.donationTier === 'high') {
+            growthRate = 0.06;
+            volatility = 0.10;
+        } else if (alum.donationTier === 'medium') {
+            growthRate = 0.04;
+        }
+
+        // Apply random volatility
+        // Box-Muller transform for normal distribution approximation or simple variance
+        const variance = (Math.random() * 2 - 1) * volatility;
+        const actualGrowth = growthRate + variance;
+
+        // Apply growth
+        let newEarnings = alum.careerEarnings * (1 + actualGrowth);
+
+        // Rare Events
+        // 1/1000 chance of "Liquidity Event" (IPO, Acquisition) -> +50%
+        if (Math.random() < 0.001) {
+            newEarnings *= 1.5;
+        }
+        // 1/1000 chance of "Crisis" (Bankruptcy, Lawsuit) -> -30%
+        if (Math.random() < 0.001) {
+            newEarnings *= 0.7;
+        }
+
+        // Cap decline at 0
+        newEarnings = Math.max(0, newEarnings);
+
+        // Update Wealth Score & Tier based on new earnings
+        // Re-using logic from generateAlumni conceptually
+        let wealthScore = Math.min(100, Math.round((newEarnings / 1000000) * 10));
+        
+        // Recalculate tier
+        const donationTier: 'high' | 'medium' | 'low' | 'none' = 
+            wealthScore > 80 ? 'high' : 
+            wealthScore > 40 ? 'medium' : 
+            wealthScore > 10 ? 'low' : 'none';
+
+        // Check if they evolved into a Titan (if not already)
+        let archetype = alum.archetype;
+        if (newEarnings > 500000000 && archetype !== 'Titan' && alum.profession !== 'Pro Athlete') {
+            archetype = 'Titan';
+        }
+
+        return {
+            ...alum,
+            careerEarnings: Math.round(newEarnings),
+            donationTier,
+            archetype,
+        };
+    });
+
+    // Re-calculate influence with new tiers/archetypes
+    // Fix: Cast updatedAlumni to ensure compatibility if inference is weak
+    const newRegistry: AlumniRegistry = {
+        ...registry,
+        allAlumni: updatedAlumni as AlumniProfile[]
+    };
+
+    return recalculateAlumniInfluence(newRegistry);
+};

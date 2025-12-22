@@ -60,6 +60,7 @@ coverage/
 
 # Local tooling state
 .agent/
+!.agent/workflows/
 
 # Agent / AI tooling
 AGENTS.md

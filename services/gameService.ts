@@ -37,7 +37,7 @@ import { ALL_HISTORICAL_DRAFTS } from '../data/allHistoricalDrafts';
 import { NBA_DRAFT_PICK_RULES } from '../data/nbaDraftPickSwaps';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './draftUtils';
 import { ensurePlayerNilProfile, calculateTeamNilBudget, updateNILCollective } from './nilService';
-import { generateAlumni, updateAlumniRegistry, generateBaselineAlumniRegistry, recalculateAlumniInfluence } from './alumniService';
+import { generateAlumni, updateAlumniRegistry, generateBaselineAlumniRegistry, recalculateAlumniInfluence, processAlumniWealthGrowth } from './alumniService';
 import { generateSponsorQuests } from './questService';
 import { getNBASalaryProfileForName, getRealNbaRatingForName } from './nbaData';
 
@@ -680,6 +680,12 @@ const computeAlumniDonationPass = (team: Team): { total: number; nil: number; fa
 const applyOffseasonAlumniBoosterPass = (team: Team, season: number): Team => {
     const withBudget = ensureBudgetForTeam(team);
     const withWarChest = ensureWarChestForTeam(withBudget);
+    
+    // Process Annual Wealth Growth for Alumni
+    if (withWarChest.alumniRegistry) {
+        withWarChest.alumniRegistry = processAlumniWealthGrowth(withWarChest.alumniRegistry);
+    }
+    
     const { total, nil, facilities, endowment, reasons } = computeAlumniDonationPass(withWarChest);
 
     const calendarYear = seasonToCalendarYear(season + 1);

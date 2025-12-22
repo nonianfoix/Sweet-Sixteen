@@ -867,7 +867,7 @@ export interface CoachContract {
 }
 
 
-export type AlumniArchetype = 'Tech' | 'Finance' | 'Local' | 'Political';
+export type AlumniArchetype = 'Tech' | 'Finance' | 'Local' | 'Political' | 'Health' | 'Arts' | 'Titan';
 
 export interface AlumniProfile {
     id: string;
@@ -893,6 +893,9 @@ export interface AlumniInfluence {
     endowmentYield: number; // 0-100 (percentage bonus)
     academicPrestigeBonus: number; // 0-100
     jobSecurityBonus: number; // 0-100
+    medicalEfficiency: number; // 0-100 (Health impact)
+    fanAppeal: number; // 0-100 (Arts impact)
+    titanBonus: number; // 0-100 (Ultra-wealth impact)
 }
 
 export interface EquityPool {
