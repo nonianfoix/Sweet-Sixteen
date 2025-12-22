@@ -1,0 +1,524 @@
+import { Coach } from '../types';
+
+export const COACHES_DB: Coach[] = [
+  {
+    name: "Jon Scheyer",
+    born: "August 24, 1987",
+    almaMater: "Duke (2010)",
+    asPlayer: "144 G, 14.4 PPG, Duke",
+    careerRecord: "4 Years, 94-22, .810 W-L%",
+    currentSchool: "Duke (94-22)",
+    conferenceChampion: "1 Time (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "3 Years (8-3), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Bill Self",
+    born: "December 27, 1962",
+    almaMater: "Oklahoma State (1985)",
+    asPlayer: "112 G, 4.7 PPG, Oklahoma State",
+    careerRecord: "31 Years, 815-247, .767 W-L%",
+    currentSchool: "Kansas (608-142)",
+    conferenceChampion: "20 Times (Reg. Seas.), 16 Times (Tourn.)",
+    ncaaTournament: "25 Years (58-22), 4 Final Fours, 2 Championships"
+  },
+  {
+    name: "Dan Hurley",
+    born: "January 16, 1973",
+    almaMater: "Seton Hall (1996)",
+    asPlayer: "121 G, 8.8 PPG, Seton Hall",
+    careerRecord: "14 Years, 292-163, .642 W-L%",
+    currentSchool: "UConn (141-58)",
+    conferenceChampion: "3 Times (Reg. Seas.), 3 Times (Tourn.)",
+    ncaaTournament: "6 Years (14-4), 2 Final Fours, 2 Championships"
+  },
+  {
+    name: "Mark Few",
+    born: "December 27, 1962",
+    almaMater: "Oregon (1987)",
+    asPlayer: "None (Student Assistant)",
+    careerRecord: "25 Years, 716-143, .834 W-L%",
+    currentSchool: "Gonzaga (716-143)",
+    conferenceChampion: "22 Times (Reg. Seas.), 19 Times (Tourn.)",
+    ncaaTournament: "24 Years (44-24), 2 Final Fours, 0 Championships"
+  },
+  {
+    name: "Tom Izzo",
+    born: "January 30, 1955",
+    almaMater: "Northern Michigan (1977)",
+    asPlayer: "Guard, Northern Michigan",
+    careerRecord: "29 Years, 707-295, .706 W-L%",
+    currentSchool: "Michigan State (707-295)",
+    conferenceChampion: "10 Times (Reg. Seas.), 6 Times (Tourn.)",
+    ncaaTournament: "26 Years (56-25), 8 Final Fours, 1 Championship"
+  },
+  {
+    name: "John Calipari",
+    born: "February 10, 1959",
+    almaMater: "Clarion (1982)",
+    asPlayer: "Guard, Clarion / UNC Wilmington",
+    careerRecord: "32 Years, 855-263, .765 W-L%",
+    currentSchool: "Arkansas (0-0)",
+    conferenceChampion: "16 Times (Reg. Seas.), 15 Times (Tourn.)",
+    ncaaTournament: "23 Years (57-21), 6 Final Fours, 1 Championship"
+  },
+  {
+    name: "Kelvin Sampson",
+    born: "October 5, 1955",
+    almaMater: "Pembroke State (1978)",
+    asPlayer: "Guard, Pembroke State",
+    careerRecord: "35 Years, 764-352, .685 W-L%",
+    currentSchool: "Houston (264-78)",
+    conferenceChampion: "6 Times (Reg. Seas.), 5 Times (Tourn.)",
+    ncaaTournament: "19 Years (26-19), 2 Final Fours, 0 Championships"
+  },
+  {
+    name: "Nate Oats",
+    born: "October 13, 1974",
+    almaMater: "Maranatha Baptist (1997)",
+    asPlayer: "Guard, Maranatha Baptist",
+    careerRecord: "9 Years, 214-97, .688 W-L%",
+    currentSchool: "Alabama (117-54)",
+    conferenceChampion: "4 Times (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "7 Years (10-7), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Scott Drew",
+    born: "October 23, 1970",
+    almaMater: "Butler (1993)",
+    asPlayer: "None (Student Assistant)",
+    careerRecord: "22 Years, 466-255, .646 W-L%",
+    currentSchool: "Baylor (446-244)",
+    conferenceChampion: "2 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "12 Years (21-11), 1 Final Four, 1 Championship"
+  },
+  {
+    name: "Hubert Davis",
+    born: "May 17, 1970",
+    almaMater: "North Carolina (1992)",
+    asPlayer: "137 G, 11.8 PPG, North Carolina",
+    careerRecord: "3 Years, 78-31, .716 W-L%",
+    currentSchool: "North Carolina (78-31)",
+    conferenceChampion: "1 Time (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "2 Years (7-2), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Rick Pitino",
+    born: "September 18, 1952",
+    almaMater: "UMass (1974)",
+    asPlayer: "Guard, UMass",
+    careerRecord: "36 Years, 854-306, .736 W-L%",
+    currentSchool: "St. John's (20-13)",
+    conferenceChampion: "10 Times (Reg. Seas.), 13 Times (Tourn.)",
+    ncaaTournament: "23 Years (55-21), 7 Final Fours, 2 Championships"
+  },
+  {
+    name: "Matt Painter",
+    born: "August 27, 1970",
+    almaMater: "Purdue (1994)",
+    asPlayer: "109 G, 4.5 PPG, Purdue",
+    careerRecord: "20 Years, 472-208, .694 W-L%",
+    currentSchool: "Purdue (447-203)",
+    conferenceChampion: "5 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "16 Years (22-16), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Shaka Smart",
+    born: "April 8, 1977",
+    almaMater: "Kenyon (1999)",
+    asPlayer: "Guard, Kenyon",
+    careerRecord: "15 Years, 347-172, .669 W-L%",
+    currentSchool: "Marquette (75-30)",
+    conferenceChampion: "1 Time (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "11 Years (10-11), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Bruce Pearl",
+    born: "March 18, 1960",
+    almaMater: "Boston College (1982)",
+    asPlayer: "None",
+    careerRecord: "29 Years, 662-263, .716 W-L%",
+    currentSchool: "Auburn (200-118)",
+    conferenceChampion: "8 Times (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "13 Years (19-13), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Mick Cronin",
+    born: "July 17, 1971",
+    almaMater: "Cincinnati (1996)",
+    asPlayer: "None",
+    careerRecord: "21 Years, 480-224, .682 W-L%",
+    currentSchool: "UCLA (115-53)",
+    conferenceChampion: "4 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "14 Years (14-14), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Brad Underwood",
+    born: "December 14, 1963",
+    almaMater: "Kansas State (1986)",
+    asPlayer: "Guard, Hardin-Simmons / Kansas State",
+    careerRecord: "11 Years, 252-115, .687 W-L%",
+    currentSchool: "Illinois (143-88)",
+    conferenceChampion: "4 Times (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "8 Years (9-8), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Greg McDermott",
+    born: "November 25, 1964",
+    almaMater: "Northern Iowa (1988)",
+    asPlayer: "Center, Northern Iowa",
+    careerRecord: "23 Years, 477-293, .619 W-L%",
+    currentSchool: "Creighton (325-160)",
+    conferenceChampion: "1 Time (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "11 Years (10-11), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Eric Musselman",
+    born: "November 19, 1964",
+    almaMater: "San Diego (1987)",
+    asPlayer: "Guard, San Diego",
+    careerRecord: "9 Years, 221-93, .704 W-L%",
+    currentSchool: "USC (0-0)",
+    conferenceChampion: "4 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "6 Years (10-6), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Tommy Lloyd",
+    born: "December 21, 1974",
+    almaMater: "Whitman (1998)",
+    asPlayer: "Guard, Whitman",
+    careerRecord: "3 Years, 88-20, .815 W-L%",
+    currentSchool: "Arizona (88-20)",
+    conferenceChampion: "2 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "3 Years (4-3), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "T.J. Otzelberger",
+    born: "September 17, 1977",
+    almaMater: "Wisconsin-Whitewater (2001)",
+    asPlayer: "Guard, Wisconsin-Whitewater",
+    careerRecord: "8 Years, 169-98, .633 W-L%",
+    currentSchool: "Iowa State (70-35)",
+    conferenceChampion: "1 Time (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "5 Years (5-5), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Rick Barnes",
+    born: "July 17, 1954",
+    almaMater: "Lenoir-Rhyne (1977)",
+    asPlayer: "Guard, Lenoir-Rhyne",
+    careerRecord: "37 Years, 809-414, .661 W-L%",
+    currentSchool: "Tennessee (205-100)",
+    conferenceChampion: "4 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "28 Years (27-28), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Mark Pope",
+    born: "September 11, 1972",
+    almaMater: "Kentucky (1996)",
+    asPlayer: "153 G, 7.9 PPG, Kentucky/Washington",
+    careerRecord: "9 Years, 187-108, .634 W-L%",
+    currentSchool: "Kentucky (0-0)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "2 Years (0-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Dusty May",
+    born: "December 30, 1976",
+    almaMater: "Indiana (2000)",
+    asPlayer: "None (Student Manager)",
+    careerRecord: "6 Years, 126-69, .646 W-L%",
+    currentSchool: "Michigan (0-0)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "2 Years (4-2), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Sean Miller",
+    born: "November 17, 1968",
+    almaMater: "Pittsburgh (1992)",
+    asPlayer: "128 G, 10.0 PPG, Pittsburgh",
+    careerRecord: "19 Years, 465-184, .716 W-L%",
+    currentSchool: "Xavier (163-75)",
+    conferenceChampion: "8 Times (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "12 Years (21-12), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Thad Matta",
+    born: "July 11, 1967",
+    almaMater: "Butler (1990)",
+    asPlayer: "Guard, Butler",
+    careerRecord: "19 Years, 457-187, .710 W-L%",
+    currentSchool: "Butler (36-33)",
+    conferenceChampion: "6 Times (Reg. Seas.), 7 Times (Tourn.)",
+    ncaaTournament: "13 Years (24-13), 2 Final Fours, 0 Championships"
+  },
+  {
+    name: "Pat Kelsey",
+    born: "May 15, 1975",
+    almaMater: "Xavier (1998)",
+    asPlayer: "Guard, Xavier",
+    careerRecord: "12 Years, 261-122, .681 W-L%",
+    currentSchool: "Louisville (0-0)",
+    conferenceChampion: "5 Times (Reg. Seas.), 4 Times (Tourn.)",
+    ncaaTournament: "4 Years (0-4), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Kevin Willard",
+    born: "April 6, 1975",
+    almaMater: "Pittsburgh (1997)",
+    asPlayer: "Guard, Pittsburgh",
+    careerRecord: "17 Years, 312-231, .575 W-L%",
+    currentSchool: "Maryland (38-29)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "6 Years (1-6), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Buzz Williams",
+    born: "September 1, 1972",
+    almaMater: "Oklahoma City (1994)",
+    asPlayer: "None",
+    careerRecord: "17 Years, 350-217, .617 W-L%",
+    currentSchool: "Texas A&M (95-70)",
+    conferenceChampion: "1 Time (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "10 Years (11-10), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Jamie Dixon",
+    born: "November 10, 1965",
+    almaMater: "TCU (1987)",
+    asPlayer: "Guard, TCU",
+    careerRecord: "21 Years, 488-233, .677 W-L%",
+    currentSchool: "TCU (160-110)",
+    conferenceChampion: "3 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "15 Years (14-15), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Steve Alford",
+    born: "November 23, 1964",
+    almaMater: "Indiana (1987)",
+    asPlayer: "125 G, 19.5 PPG, Indiana",
+    careerRecord: "29 Years, 683-357, .657 W-L%",
+    currentSchool: "Nevada (96-64)",
+    conferenceChampion: "6 Times (Reg. Seas.), 6 Times (Tourn.)",
+    ncaaTournament: "12 Years (11-12), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Porter Moser",
+    born: "August 24, 1968",
+    almaMater: "Creighton (1990)",
+    asPlayer: "Guard, Creighton",
+    careerRecord: "20 Years, 347-277, .556 W-L%",
+    currentSchool: "Oklahoma (54-45)",
+    conferenceChampion: "3 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "2 Years (6-2), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Todd Golden",
+    born: "July 7, 1985",
+    almaMater: "Saint Mary's (2008)",
+    asPlayer: "Guard, Saint Mary's",
+    careerRecord: "5 Years, 97-63, .606 W-L%",
+    currentSchool: "Florida (40-27)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "2 Years (0-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Dennis Gates",
+    born: "January 14, 1980",
+    almaMater: "California (2001)",
+    asPlayer: "Guard, California",
+    careerRecord: "5 Years, 73-63, .537 W-L%",
+    currentSchool: "Missouri (33-34)",
+    conferenceChampion: "2 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "2 Years (1-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Jerome Tang",
+    born: "October 7, 1966",
+    almaMater: "Charter Oak State (2007)",
+    asPlayer: "None",
+    careerRecord: "2 Years, 45-25, .643 W-L%",
+    currentSchool: "Kansas State (45-25)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "1 Year (3-1), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Wes Miller",
+    born: "January 28, 1983",
+    almaMater: "North Carolina (2007)",
+    asPlayer: "Guard, North Carolina",
+    careerRecord: "13 Years, 240-179, .573 W-L%",
+    currentSchool: "Cincinnati (66-43)",
+    conferenceChampion: "4 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "2 Years (0-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Shaheen Holloway",
+    born: "October 7, 1976",
+    almaMater: "Seton Hall (2000)",
+    asPlayer: "116 G, 13.7 PPG, Seton Hall",
+    careerRecord: "6 Years, 103-84, .551 W-L%",
+    currentSchool: "Seton Hall (39-30)",
+    conferenceChampion: "0 Times (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "1 Year (3-1), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Kyle Neptune",
+    born: "January 21, 1985",
+    almaMater: "Lehigh (2007)",
+    asPlayer: "Guard, Lehigh",
+    careerRecord: "3 Years, 51-49, .510 W-L%",
+    currentSchool: "Villanova (35-33)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "0 Years (0-0), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Kim English",
+    born: "September 24, 1988",
+    almaMater: "Missouri (2012)",
+    asPlayer: "141 G, 11.1 PPG, Missouri",
+    careerRecord: "3 Years, 55-43, .561 W-L%",
+    currentSchool: "Providence (21-14)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "1 Year (0-1), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Ed Cooley",
+    born: "September 10, 1969",
+    almaMater: "Stonehill (1994)",
+    asPlayer: "Forward, Stonehill",
+    careerRecord: "18 Years, 343-250, .578 W-L%",
+    currentSchool: "Georgetown (9-23)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "7 Years (3-7), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Fran McCaffery",
+    born: "May 23, 1959",
+    almaMater: "Penn (1982)",
+    asPlayer: "Guard, Penn",
+    careerRecord: "28 Years, 532-370, .590 W-L%",
+    currentSchool: "Iowa (280-192)",
+    conferenceChampion: "4 Times (Reg. Seas.), 3 Times (Tourn.)",
+    ncaaTournament: "12 Years (6-12), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Greg Gard",
+    born: "December 3, 1970",
+    almaMater: "Wisconsin-Platteville (1995)",
+    asPlayer: "None",
+    careerRecord: "9 Years, 186-107, .635 W-L%",
+    currentSchool: "Wisconsin (186-107)",
+    conferenceChampion: "2 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "6 Years (6-6), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Mike Woodson",
+    born: "March 24, 1958",
+    almaMater: "Indiana (1980)",
+    asPlayer: "104 G, 19.8 PPG, Indiana",
+    careerRecord: "3 Years, 63-40, .612 W-L% (NCAA)",
+    currentSchool: "Indiana (63-40)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "2 Years (2-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Steve Pikiell",
+    born: "November 21, 1967",
+    almaMater: "UConn (1990)",
+    asPlayer: "Guard, UConn",
+    careerRecord: "19 Years, 327-282, .537 W-L%",
+    currentSchool: "Rutgers (135-126)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "3 Years (0-3), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Kevin Keatts",
+    born: "July 28, 1972",
+    almaMater: "Ferrum (2011)",
+    asPlayer: "Guard, Ferrum",
+    careerRecord: "10 Years, 205-122, .627 W-L%",
+    currentSchool: "NC State (133-94)",
+    conferenceChampion: "2 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "4 Years (4-4), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Jim Larranaga",
+    born: "October 2, 1949",
+    almaMater: "Providence (1971)",
+    asPlayer: "Guard, Providence",
+    careerRecord: "40 Years, 740-500, .597 W-L%",
+    currentSchool: "Miami (270-166)",
+    conferenceChampion: "5 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "12 Years (13-12), 2 Final Fours, 0 Championships"
+  },
+  {
+    name: "Leonard Hamilton",
+    born: "August 4, 1948",
+    almaMater: "Tennessee-Martin (1971)",
+    asPlayer: "Guard, Tennessee-Martin",
+    careerRecord: "36 Years, 643-483, .571 W-L%",
+    currentSchool: "Florida State (443-273)",
+    conferenceChampion: "2 Times (Reg. Seas.), 2 Times (Tourn.)",
+    ncaaTournament: "11 Years (10-11), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Brad Brownell",
+    born: "November 15, 1968",
+    almaMater: "DePauw (1991)",
+    asPlayer: "Guard, DePauw",
+    careerRecord: "22 Years, 431-283, .604 W-L%",
+    currentSchool: "Clemson (264-198)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "7 Years (6-7), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Bobby Hurley",
+    born: "June 28, 1971",
+    almaMater: "Duke (1993)",
+    asPlayer: "140 G, 12.4 PPG, Duke",
+    careerRecord: "11 Years, 197-152, .564 W-L%",
+    currentSchool: "Arizona State (155-132)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "4 Years (1-4), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Penny Hardaway",
+    born: "July 18, 1971",
+    almaMater: "Memphis (2003)",
+    asPlayer: "66 G, 20.0 PPG, Memphis State",
+    careerRecord: "6 Years, 133-62, .682 W-L%",
+    currentSchool: "Memphis (133-62)",
+    conferenceChampion: "0 Times (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "2 Years (1-2), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Chris Beard",
+    born: "February 18, 1973",
+    almaMater: "Texas (1995)",
+    asPlayer: "None (Student Manager)",
+    careerRecord: "9 Years, 191-79, .707 W-L%",
+    currentSchool: "Ole Miss (20-12)",
+    conferenceChampion: "2 Times (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "6 Years (11-6), 1 Final Four, 0 Championships"
+  },
+  {
+    name: "Mark Turgeon",
+    born: "February 5, 1965",
+    almaMater: "Kansas (1987)",
+    asPlayer: "Guard, Kansas",
+    careerRecord: "24 Years, 477-275, .634 W-L%",
+    currentSchool: "None (Retired)",
+    conferenceChampion: "1 Time (Reg. Seas.), 1 Time (Tourn.)",
+    ncaaTournament: "10 Years (5-10), 0 Final Fours, 0 Championships"
+  },
+  {
+    name: "Jeff Capel",
+    born: "February 12, 1975",
+    almaMater: "Duke (1997)",
+    asPlayer: "124 G, 12.9 PPG, Duke",
+    careerRecord: "15 Years, 267-210, .560 W-L%",
+    currentSchool: "Pittsburgh (97-92)",
+    conferenceChampion: "0 Times (Reg. Seas.), 0 Times (Tourn.)",
+    ncaaTournament: "4 Years (5-4), 0 Final Fours, 0 Championships"
+  }
+];

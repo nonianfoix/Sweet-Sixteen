@@ -1,0 +1,40 @@
+:root {
+  color: #0f172a;
+  background-color: #d0d5dd;
+  font-family: 'Press Start 2P', 'Courier New', system-ui, sans-serif;
+  line-height: 1.4;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(circle at top, #f7fafc 0%, #d5d9e0 45%, #c2c7d0 100%);
+}
+
+body {
+  padding: 0;
+  zoom: 0.75; /* User preference: 75% scale */
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+}
+
+button {
+  font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  body {
+    padding: 8px;
+  }
+}

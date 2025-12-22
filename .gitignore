@@ -1,0 +1,106 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Build output
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+
+# Environment (keep examples)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Local overrides
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+Desktop.ini
+.eslintcache
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tests / coverage
+coverage/
+.nyc_output/
+
+# Caches
+.vite/
+.parcel-cache/
+.turbo/
+
+# Local tooling state
+.agent/
+
+# Agent / AI tooling
+AGENTS.md
+agents.md
+GEMINI.md
+codex.config.json
+.codex/
+IMAGES FOR AGENT/
+
+# Non-runtime docs / notes (root-level)
+/*.txt
+/*.md
+!README.md
+!LICENSE*
+
+# Explicit ignores
+yolo_setup.txt
+
+# Non-runtime exports (root-level)
+/*.html
+/*.xlsx
+/*.csv
+/*.ts.tmp
+!index.html
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tgz
+*.tar
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+*~
+*.swp
+*.swo
+
+# Data pipeline artifacts
+.cache/
+runs/
+backup/

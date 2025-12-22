@@ -1,0 +1,58 @@
+{
+  "version": "scorecard_program_percentage_v1",
+  "source": {
+    "name": "College Scorecard API (program percentages)",
+    "url": "https://api.data.gov/ed/collegescorecard/",
+    "notes": "Maps `latest.academics.program_percentage.*` categories into game archetypes."
+  },
+  "categoryToArchetype": {
+    "agriculture": "general_liberal_arts_students",
+    "resources": "general_liberal_arts_students",
+    "architecture": "arts_media_students",
+    "ethnic_cultural_gender": "general_liberal_arts_students",
+    "communication": "arts_media_students",
+    "communications_technology": "tech_students",
+    "computer": "tech_students",
+    "personal_culinary": "general_liberal_arts_students",
+    "education": "education_students",
+    "engineering": "tech_students",
+    "engineering_technology": "tech_students",
+    "language": "general_liberal_arts_students",
+    "family_consumer_science": "general_liberal_arts_students",
+    "legal": "law_students",
+    "english": "general_liberal_arts_students",
+    "humanities": "general_liberal_arts_students",
+    "library": "general_liberal_arts_students",
+    "biological": "health_med_students",
+    "mathematics": "tech_students",
+    "military": "general_liberal_arts_students",
+    "multidiscipline": "general_liberal_arts_students",
+    "parks_recreation_fitness": "general_liberal_arts_students",
+    "philosophy_religious": "general_liberal_arts_students",
+    "theology_religious_vocation": "general_liberal_arts_students",
+    "physical_science": "tech_students",
+    "science_technology": "tech_students",
+    "psychology": "general_liberal_arts_students",
+    "security_law_enforcement": "general_liberal_arts_students",
+    "public_administration_social_service": "general_liberal_arts_students",
+    "social_science": "general_liberal_arts_students",
+    "construction": "tech_students",
+    "mechanic_repair_technology": "tech_students",
+    "precision_production": "tech_students",
+    "transportation": "tech_students",
+    "visual_performing": "arts_media_students",
+    "health": "health_med_students",
+    "business_marketing": "finance_business_students",
+    "history": "general_liberal_arts_students"
+  },
+  "baselineWeightsIfMissing": {
+    "tech_students": 15,
+    "law_students": 8,
+    "finance_business_students": 18,
+    "health_med_students": 15,
+    "education_students": 10,
+    "arts_media_students": 10,
+    "general_liberal_arts_students": 24
+  }
+}
+

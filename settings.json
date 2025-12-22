@@ -1,0 +1,10 @@
+{
+  "tools": {
+    "default": {
+      "enabled": true
+    }
+  },
+  "auth": {
+    "method": "oauth-personal"
+  }
+}

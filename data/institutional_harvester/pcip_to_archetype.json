@@ -1,0 +1,50 @@
+{
+  "version": "scorecard_pcip_v1",
+  "source": {
+    "name": "College Scorecard 'PCIPxx' program shares (most recent cohorts mirror)",
+    "url": "https://data.wa.gov/api/views/wajg-ig9g/rows.csv?accessType=DOWNLOAD",
+    "notes": "Maps Scorecard PCIP 2-digit categories into game archetypes. PCIP values are shares of degrees (0..1)."
+  },
+  "pcipToArchetype": {
+    "PCIP11": "tech_students",
+    "PCIP14": "tech_students",
+    "PCIP15": "tech_students",
+    "PCIP27": "tech_students",
+    "PCIP40": "tech_students",
+    "PCIP30": "tech_students",
+    "PCIP22": "law_students",
+    "PCIP52": "finance_business_students",
+    "PCIP51": "health_med_students",
+    "PCIP26": "health_med_students",
+    "PCIP13": "education_students",
+    "PCIP09": "arts_media_students",
+    "PCIP10": "arts_media_students",
+    "PCIP50": "arts_media_students",
+    "PCIP01": "general_liberal_arts_students",
+    "PCIP03": "general_liberal_arts_students",
+    "PCIP04": "general_liberal_arts_students",
+    "PCIP05": "general_liberal_arts_students",
+    "PCIP12": "general_liberal_arts_students",
+    "PCIP16": "general_liberal_arts_students",
+    "PCIP19": "general_liberal_arts_students",
+    "PCIP23": "general_liberal_arts_students",
+    "PCIP24": "general_liberal_arts_students",
+    "PCIP25": "general_liberal_arts_students",
+    "PCIP31": "general_liberal_arts_students",
+    "PCIP38": "general_liberal_arts_students",
+    "PCIP42": "general_liberal_arts_students",
+    "PCIP44": "general_liberal_arts_students",
+    "PCIP45": "general_liberal_arts_students",
+    "PCIP54": "general_liberal_arts_students"
+  },
+  "baselineWeightsIfMissing": {
+    "tech_students": 15,
+    "law_students": 8,
+    "finance_business_students": 18,
+    "health_med_students": 15,
+    "education_students": 10,
+    "arts_media_students": 10,
+    "general_liberal_arts_students": 24
+  }
+}
+

@@ -1,0 +1,12 @@
+{
+  "notes": "Optional deterministic overrides for identity resolution. Copy to `data/institutional_harvester/schools_overrides.json` and fill as needed.",
+  "overrides": [
+    {
+      "input_school_name": "California",
+      "force_unitid": null,
+      "force_school_name_exact": null,
+      "comment": "Example: set force_unitid to UC Berkeley's UNITID if you want to disambiguate."
+    }
+  ]
+}
+

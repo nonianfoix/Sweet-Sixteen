@@ -1,0 +1,127 @@
+export const processWeeklyFinances = (team: Team, week: number): Team => {
+    if (!team.budget || !team.budget.allocations) return team;
+
+    const { marketing, recruiting, facilities, staffDevelopment } = team.budget.allocations;
+    
+    // Loan Payments
+    let loanPaymentTotal = 0;
+    const updatedLoans = (team.loans || []).map(loan => {
+        // Monthly payment divided by 4 for weekly approximation
+        const weeklyPayment = loan.monthlyPayment / 4;
+        loanPaymentTotal += weeklyPayment;
+        return { ...loan, monthsRemaining: Math.max(0, loan.monthsRemaining - 0.25) }; 
+    }).filter(l => l.monthsRemaining > 0);
+
+    // Campaign Management
+    let campaignImpact = 1.0;
+    const updatedCampaigns = (team.activeCampaigns || []).map(c => {
+        campaignImpact += (c.impactMultiplier - 1);
+        return { ...c, weeksRemaining: c.weeksRemaining - 1 };
+    }).filter(c => c.weeksRemaining > 0);
+
+    // Staff Salaries (Weekly portion of annual salary)
+    // Assuming 3 assistants, 1 trainer, 1 scout initially if not set.
+    // Real logic should sum up actual staff salaries.
+    const totalStaffSalary = (team.staff.assistants.reduce((sum, s) => sum + s.salary, 0) +
+                             team.staff.trainers.reduce((sum, s) => sum + s.salary, 0) +
+                             team.staff.scouts.reduce((sum, s) => sum + s.salary, 0));
+    const weeklyStaffExpenses = totalStaffSalary / 52;
+
+    // Facilities Maintenance Logic
+    const newFacilities = { ...(team.facilities || {}) };
+    let totalMaintenanceCost = 0;
+    
+    if (newFacilities.arena) {
+        // Arena maintenance: Base cost per seat
+        const baseMaintenance = newFacilities.arena.capacity * 0.5; 
+        totalMaintenanceCost += baseMaintenance;
+        
+        // Quality decay/improve based on facilities budget allocation vs maintenance cost
+        // We assume the 'facilities' allocation is meant to cover ALL facilities.
+        // Let's split the facilities budget proportionally or just check against total need.
+    }
+    
+    (['training', 'scouting', 'coaching', 'medical'] as const).forEach(type => {
+        const fac = newFacilities[type];
+        if (fac) {
+             const baseCost = fac.level * 1000; // $1k per level per week
+             totalMaintenanceCost += baseCost;
+        }
+    });
+
+    // "facilities" budget allocation is applied against the total maintenance cost.
+    // If budget > cost, quality improves. If budget < cost, quality decays.
+    const facilityBudgetSurplus = facilities - totalMaintenanceCost;
+    
+    // Apply quality changes
+    if (newFacilities.arena) {
+         const change = facilityBudgetSurplus > 0 ? 0.1 : -0.2;
+         newFacilities.arena = { ...newFacilities.arena, quality: clamp(newFacilities.arena.quality + change, 0, 100) };
+    }
+    (['training', 'scouting', 'coaching', 'medical'] as const).forEach(type => {
+         const fac = newFacilities[type];
+         if (fac) {
+             const change = facilityBudgetSurplus > 0 ? 0.1 : -0.2;
+             (newFacilities as any)[type] = { ...fac, quality: clamp(fac.quality + change, 0, 100) };
+         }
+    });
+
+    const totalWeeklyExpenses = marketing + recruiting + facilities + staffDevelopment + loanPaymentTotal + weeklyStaffExpenses;
+
+    // Calculate Weekly Merch Revenue
+    const merchRevenue = calculateWeeklyMerchRevenue(team) * campaignImpact;
+    const licensingRevenue = calculateLicensingRevenue(team);
+    
+    // Weekly operational expenses (travel, game day ops) - approximated
+    const operationsExpense = 5000; 
+
+    const totalExpenses = totalWeeklyExpenses + operationsExpense;
+
+    // Update Cash (Revenue - Expenses)
+    const newCash = Math.max(0, team.budget.cash + merchRevenue + licensingRevenue - totalExpenses);
+
+    // Record history
+    const historyEntry: FinancialWeekRecord = {
+        week,
+        revenue: merchRevenue + licensingRevenue, 
+        expenses: totalExpenses,
+        profit: (merchRevenue + licensingRevenue) - totalExpenses,
+        cash: newCash
+    };
+
+    // Update Accumulators in Team Finances for Season Totals
+    const updatedFinances = {
+        ...team.finances,
+        totalRevenue: team.finances.totalRevenue + merchRevenue + licensingRevenue,
+        operationalExpenses: team.finances.operationalExpenses + totalExpenses,
+        merchandiseRevenue: team.finances.merchandiseRevenue + merchRevenue,
+        staffPayrollExpenses: (team.finances.staffPayrollExpenses || 0) + weeklyStaffExpenses,
+        facilitiesExpenses: (team.finances.facilitiesExpenses || 0) + facilities, // Actual spend from allocation
+    };
+
+    // Marketing Effect on Fan Interest
+    const baseMarketing = team.prestige * 100; 
+    let interestChange = 0;
+    if (marketing > baseMarketing * 1.2) interestChange = 0.5; 
+    else if (marketing < baseMarketing * 0.8) interestChange = -0.5;
+    if (updatedCampaigns.length > 0) interestChange += 0.5 * updatedCampaigns.length;
+
+    let newFanInterest = team.fanInterest;
+    if (Math.random() < Math.abs(interestChange)) {
+        newFanInterest = clamp(team.fanInterest + Math.sign(interestChange), 10, 100);
+    }
+
+    const newNilCollective = updateNILCollective(team, week);
+
+    return {
+        ...team,
+        budget: { ...team.budget, cash: newCash },
+        finances: updatedFinances,
+        loans: updatedLoans,
+        activeCampaigns: updatedCampaigns,
+        fanInterest: newFanInterest,
+        facilities: newFacilities as any,
+        nilCollective: newNilCollective,
+        financialHistory: [...(team.financialHistory || []), historyEntry]
+    };
+};
