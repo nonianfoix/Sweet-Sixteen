@@ -1,7 +1,7 @@
-
+﻿
 // services/gameService.ts
 import {
-    Player, Team, GameResult, GameState, GameStatus, Recruit,
+    Player, Team, GameResult, GameState, GameStatus, Recruit, RecruitMotivation, RecruitArchetype,
     DraftPick, DraftProspect, DraftProspectSource, DraftProspectCategory,
     InternationalProspect, NBASimulationResult, NBATeamSimulation,
     Staff, StaffRole, StaffGrade, Sponsor, SponsorOffer, SponsorData,
@@ -15,12 +15,13 @@ import {
     ChampionRecord, GameBoxScore, JobOffer, ArenaFacility, MedicalFacility, SeatMix, SeatSegmentKey,
     NilCollectiveProfile, NilCollectiveTier, SponsorQuest, EventPlaybookEntry, ScheduledEvent,
     BroadcastDeal, BroadcastOffer, AttendanceForecast, FanArchetype, PlayerRole, PlayerStreak, PlayerInjury, InjurySeverity, InjuryType, ProspectPersonality, ProgramPreference, RecruitNilPriority, StreakType,
-    BudgetAllocations, BoardExpectations, BoardProfile, BoardMetricKey, BoardMetricResult, FinancialWeekRecord, ConcessionTier, MerchStrategy, MerchPricingSettings, ParkingPricingSettings, LicensingContract, VisitStatus, Transfer, StaffSpecialty, GameAdjustment,
+    BudgetAllocations, BoardExpectations, BoardProfile, BoardMetricKey, BoardMetricResult, FinancialWeekRecord, ConcessionTier, MerchStrategy, MerchPricingSettings, ParkingPricingSettings, LicensingContract, VisitStatus, Transfer, StaffSpecialty, GameAdjustment, Dealbreaker,
     CardioData, // Added CardioData
     TeamWealth, NBAContractProfile, // Added TeamWealth import
     SponsorName, // Added SponsorName import
     NBAFreeAgent, NBATransaction, DraftPickRule, DraftPickAsset, // Added NBA types
-    NBA_MINIMUM_SALARY, NBA_SALARY_CAP_2025, NBA_LUXURY_TAX_THRESHOLD_2025 // Added constant
+    NBA_MINIMUM_SALARY, NBA_SALARY_CAP_2025, NBA_LUXURY_TAX_THRESHOLD_2025, // Added constant
+    GameEvent, EventType, GameDate // Added Event Types
 } from '../types';
 import { SCHOOL_INSTITUTIONAL_PROFILES } from '../data/institutional_harvester/school_profiles.nokey.generated';
 import {
@@ -40,6 +41,7 @@ import { ensurePlayerNilProfile, calculateTeamNilBudget, updateNILCollective } f
 import { generateAlumni, updateAlumniRegistry, generateBaselineAlumniRegistry, recalculateAlumniInfluence, processAlumniWealthGrowth } from './alumniService';
 import { generateSponsorQuests } from './questService';
 import { getNBASalaryProfileForName, getRealNbaRatingForName } from './nbaData';
+import { advanceDate, getWeekNumber, SEASON_START_DATE, addDays, compareDates, isSameDate, formatDate, MONTH_ORDER } from './dateService';
 
 export const randomBetween = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 export const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -897,6 +899,36 @@ export const createPlayer = (year: Player['year'], forcedPosition?: RosterPositi
   return ensurePlayerNilProfile(player);
 };
 
+const generateRecruitMotivations = (archetype: RecruitArchetype): RecruitMotivation => {
+    const m = { proximity: 50, playingTime: 50, nil: 50, exposure: 50, relationship: 50, development: 50, academics: 50 };
+    switch(archetype) {
+        case 'Mercenary': 
+            m.nil = randomBetween(80, 100); 
+            m.playingTime = randomBetween(70, 100); 
+            m.relationship = randomBetween(10, 40);
+            break;
+        case 'HometownHero':
+            m.proximity = randomBetween(85, 100);
+            m.relationship = randomBetween(70, 95);
+            m.exposure = randomBetween(20, 60);
+            break;
+        case 'ProcessTrustor':
+            m.development = randomBetween(80, 100);
+            m.playingTime = randomBetween(10, 50);
+            m.academics = randomBetween(40, 80);
+            break;
+        case 'FameSeeker':
+            m.exposure = randomBetween(85, 100);
+            m.nil = randomBetween(60, 90);
+            m.proximity = randomBetween(0, 50);
+            break;
+    }
+    (Object.keys(m) as (keyof RecruitMotivation)[]).forEach(key => {
+        m[key] = clamp(m[key] + randomBetween(-10, 10), 0, 100);
+    });
+    return m;
+};
+
 export const createRecruit = (): Recruit => {
     const basePlayer = createPlayer('Fr');
     const playerPart: Player = {
@@ -945,7 +977,21 @@ export const createRecruit = (): Recruit => {
     const { year, starterPosition, seasonStats, ...recruitData } = playerPart;
     const personalityTrait = pickRandom(PROSPECT_PERSONALITIES);
     const nilPriority = pickRandom(NIL_PRIORITY_OPTIONS);
-    const preferredProgramAttributes = buildProgramPreference();
+    const preferredProgramAttributes: ProgramPreference = {
+        academics: randomBetween(25, 95),
+        marketExposure: randomBetween(15, 90),
+        communityEngagement: randomBetween(20, 85),
+    };
+
+    const archetype: RecruitArchetype = pickRandom(['Mercenary', 'HometownHero', 'ProcessTrustor', 'FameSeeker']);
+    const motivations = generateRecruitMotivations(archetype);
+    
+    // Hard dealbreakers can now be more logical
+    let dealbreaker: Dealbreaker = pickRandom(['None', 'None', 'None', 'None']);
+    if (motivations.proximity > 90) dealbreaker = pickRandom(['Proximity', 'Proximity', 'None']);
+    if (motivations.nil > 90) dealbreaker = pickRandom(['NIL', 'NIL', 'None']);
+    if (motivations.playingTime > 90) dealbreaker = pickRandom(['PlayingTime', 'None']);
+    if (motivations.academics > 90) dealbreaker = pickRandom(['Academics', 'None']);
 
     return {
         ...recruitData,
@@ -959,11 +1005,14 @@ export const createRecruit = (): Recruit => {
         personalityTrait,
         nilPriority,
         preferredProgramAttributes,
-        archetype: pickRandom(['BagChaser', 'Hooper', 'HometownHero', 'Academic']),
-        dealbreaker: pickRandom(['NIL', 'PlayingTime', 'Proximity', 'Academics', 'None', 'None', 'None']),
+        archetype,
+        motivations,
+        dealbreaker,
         visitStatus: 'None',
         homeState: pickRandom(US_STATES),
-        state: pickRandom(US_STATES), // Redundant but required by interface
+        state: pickRandom(US_STATES), 
+        softCommitment: false,
+        resilience: randomBetween(30, 80),
     };
 };
 
@@ -2077,7 +2126,7 @@ const ensureTeamFinances = (team: Team) => {
     if (!Array.isArray(team.finances.ledger)) team.finances.ledger = [];
 };
 
-const recordFinancialTransaction = (team: Team, season: number, week: number, entry: { description: string; category: string; amount: number; revenueKey?: keyof Finances; expenseKey?: keyof Finances }) => {
+const recordFinancialTransaction = (team: Team, season: number, week: number, entry: { description: string; category: string; amount: number; revenueKey?: keyof Finances; expenseKey?: keyof Finances, date?: GameDate }) => {
     ensureBudgetAllocations(team);
     ensureTeamFinances(team);
 
@@ -2085,13 +2134,13 @@ const recordFinancialTransaction = (team: Team, season: number, week: number, en
     team.budget!.cash = (team.budget!.cash || 0) + amount;
 
     if (entry.revenueKey) {
-        team.finances![entry.revenueKey] = (team.finances![entry.revenueKey] as number) + amount;
+        (team.finances as any)[entry.revenueKey] = ((team.finances as any)[entry.revenueKey] || 0) + amount;
         team.finances!.totalRevenue += amount;
     }
 
     if (entry.expenseKey) {
         const cost = Math.abs(amount);
-        team.finances![entry.expenseKey] = (team.finances![entry.expenseKey] as number) + cost;
+        (team.finances as any)[entry.expenseKey] = ((team.finances as any)[entry.expenseKey] || 0) + cost;
         team.finances!.operationalExpenses += cost;
     }
 
@@ -2100,7 +2149,7 @@ const recordFinancialTransaction = (team: Team, season: number, week: number, en
 
     team.finances!.ledger.push({
         id: crypto.randomUUID(),
-        date: new Date().toISOString(),
+        date: entry.date ? (typeof entry.date === 'string' ? entry.date : formatDate(entry.date as GameDate)) : new Date().toISOString(),
         week,
         season,
         description: entry.description,
@@ -2640,7 +2689,7 @@ export const initializeGameWorld = (userTeamName: string) => {
           earliestSeason,
       }),
   }));
-  const schedule = generateSchedule(allTeams);
+  const { events, schedule } = generateScheduleEvents(allTeams);
   let recruits: Recruit[] = Array.from({ length: 350 }, createRecruit);
   recruits = runInitialRecruitingOffers(allTeams, recruits);
   const { sponsors: finalSponsors, updatedTeams } = recalculateSponsorLandscape(allTeams, initialSponsors, null);
@@ -2658,7 +2707,7 @@ export const initializeGameWorld = (userTeamName: string) => {
   const eventPlaybookCatalog = buildEventPlaybookCatalog();
   // Pass allTeams to buildSponsorQuestDeck so we can match quests to current sponsors
   const sponsorQuestDeck = allTeams.flatMap(team => generateSponsorQuests(team, 1));
-  return { allTeams, schedule, recruits, sponsors: finalSponsors, initialHistory, internationalProspects, nbaSimulation, nbaTeams, nbaSchedule, eventPlaybookCatalog, sponsorQuestDeck, nbaFreeAgents: generateInitialNBAFreeAgents(), nbaTransactions: [], nbaDraftPickAssets: buildInitialDraftPickAssets() };
+  return { allTeams, schedule, eventQueue: events, recruits, sponsors: finalSponsors, initialHistory, internationalProspects, nbaSimulation, nbaTeams, nbaSchedule, eventPlaybookCatalog, sponsorQuestDeck, nbaFreeAgents: generateInitialNBAFreeAgents(), nbaTransactions: [], nbaDraftPickAssets: buildInitialDraftPickAssets() };
 };
 
 const SCHEDULING_CONFIG = {
@@ -3724,17 +3773,17 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
     }
 
     switch (recruit.archetype) {
-        case 'BagChaser':
-            archetypeBonus += wealthBonus * 2; // Double the impact of wealth
+        case 'Mercenary':
+            archetypeBonus += wealthBonus * 2; 
             break;
-        case 'Hooper':
-            archetypeBonus += playingTimeFactor * 2; // Double the impact of playing time
+        case 'FameSeeker':
+             archetypeBonus += prestigeFactor * 1.5;
             break;
         case 'HometownHero':
-            archetypeBonus += isHomeState ? 25 : -5; // Massive bonus for home state, slight penalty for leaving
+            archetypeBonus += isHomeState ? 25 : -5; 
             break;
-        case 'Academic':
-            archetypeBonus += (academicScore - 50) * 0.3; // Bonus for good academics
+        case 'ProcessTrustor':
+            archetypeBonus += (academicScore - 50) * 0.3; 
             break;
     }
 
@@ -3924,11 +3973,47 @@ export const processTransferPortalDay = (teams: Team[], portalPlayers: Transfer[
     return { updatedTeams, updatedPortalPlayers: remainingPortalPlayers };
 };
 
+export const calculateVisitOutcome = (recruit: Recruit, team: Team, gameResult: { won: boolean, isRivalry: boolean }): number => {
+    let boost = gameResult.won ? 15 : -5; 
+    
+    if (recruit.motivations) {
+         if (recruit.motivations.relationship > 75) boost += 5; 
+         if (recruit.motivations.nil > 80 && gameResult.won) boost += 5;
+    }
+
+    if (!gameResult.won) {
+        const resilience = recruit.resilience ?? 50;
+        if (resilience > 70) boost += 5; 
+    }
+
+    if (gameResult.isRivalry) boost += (gameResult.won ? 10 : -10);
+    
+    if (gameResult.won) boost += recruit.stars * 2;
+    else boost -= recruit.stars;
+
+    return boost;
+};
+
+
 export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTeamName: string, week: number, schedule: GameResult[][], isSigningPeriod: boolean = false, contactsMadeThisWeek: number = 0, contactPoints?: number, userCoachSkills?: string[]): { updatedRecruits: Recruit[], updatedContactsMadeThisWeek: number } => {
     let currentContactsMade = contactsMadeThisWeek;
     const updatedRecruits = JSON.parse(JSON.stringify(recruits));
     const teamsByName = new Map(teams.map(t => [t.name, t]));
     const userTeam = teams.find(t => t.isUserTeam);
+
+    // Apply Weekly Interest Volatility
+    updatedRecruits.forEach((r: Recruit) => {
+        if (!r.verbalCommitment) {
+            const resilience = r.resilience ?? 50; 
+            // Lower resilience = higher volatility
+            // Resilience 80 = 10% chance. Resilience 20 = 40% chance.
+            const volatilityChance = 0.5 - (resilience / 200); 
+            if (Math.random() < volatilityChance) {
+                const swing = Math.floor(Math.random() * 7) - 3; // -3 to +3
+                r.interest = Math.min(100, Math.max(0, r.interest + swing));
+            }
+        }
+    });
 
     if (userTeam) {
         const gamesThisWeek = schedule[week-1];
@@ -3942,12 +4027,10 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
                         const won = (userGame.homeTeam === userTeam.name && userGame.homeScore > userGame.awayScore) || (userGame.awayTeam === userTeam.name && userGame.awayScore > userGame.homeScore);
                         const opponent = teams.find(t => t.name === (userGame.homeTeam === userTeam.name ? userGame.awayTeam : userGame.homeTeam));
                         const rivalry = opponent && opponent.conference === userTeam.conference;
-                        let boost = 0;
-                        if (won) {
-                            boost = 15 + (rivalry ? 10 : 0) + (r.stars * 2);
-                        } else {
-                            boost = -10 - (rivalry ? 10 : 0) - (r.stars);
-                        }
+                        const boost = calculateVisitOutcome(r, userTeam, { 
+                            won, 
+                            isRivalry: rivalry || false 
+                        });
                         r.interest = Math.min(100, Math.max(0, r.interest + boost));
                         r.visitStatus = 'Completed';
                     }
@@ -4412,7 +4495,7 @@ export const processDraft = (
                 : basePlayer;
             
             return {
-                ...player,
+                ...(player as any),
                 originDescription: player.originDescription || pick.originDescription || pick.originalTeam || 'Unknown',
                 contract: {
                     ...contract,
@@ -4462,7 +4545,7 @@ export const generateSigningAndProgressionSummaries = (teams: Team[], recruits: 
 
     const signingSummary = recruits
         .filter(r => r.verbalCommitment === userTeamName)
-        .map(r => `${r.stars}★ ${r.position} ${r.name} (#${r.overall} OVR) signed with your team.`);
+        .map(r => `${r.stars}â˜… ${r.position} ${r.name} (#${r.overall} OVR) signed with your team.`);
 
     return { progressionSummary, signingSummary };
 };
@@ -5091,7 +5174,7 @@ export const getEstimatedRookieContract = (draftStatus: string): NBAContractProf
         return {
             salary: minSalary,
             yearsLeft: 2,
-            type: 'Guaranteed', // First year guaranteed
+            // type: 'Guaranteed', // First year guaranteed
             yearlySalaries: [
                 minSalary,
                 minSalary // Team Option technically, but handled as contract logic later
@@ -5118,7 +5201,7 @@ export const initializeNBATeams = (): Team[] => {
     };
 
     const normalizePlayerName = (name: string): string => {
-        return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").replace(/,/g, "").replace(/'/g, "").replace(/ё/g, "e").replace(/е/g, "e").toLowerCase().trim();
+        return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").replace(/,/g, "").replace(/'/g, "").replace(/Ñ‘/g, "e").replace(/Ðµ/g, "e").toLowerCase().trim();
     };
 
     const normalizePlayerKey = (name: string): string => {
@@ -5449,13 +5532,15 @@ export const generateNBASchedule = (teams: { name: string }[]): GameResult[][] =
         for (let i = 0; i < gamesForThisWeek; i++) {
              if (poolIndex < matchupPool.length) {
                  const m = matchupPool[poolIndex++];
+                 const dayOffset = Math.floor(Math.random() * 7);
                  weekGames.push({
                      homeTeam: m.home,
                      awayTeam: m.away,
                      homeScore: 0,
                      awayScore: 0,
                      played: false,
-                     isPlayoffGame: false
+                     isPlayoffGame: false,
+                     day: w * 7 + dayOffset
                  });
              }
         }
@@ -5524,7 +5609,7 @@ export const negotiateBroadcastDeal = (offer: BroadcastOffer, counterAmount: num
     }
 };
 
-export const processWeeklyFinances = (team: Team, season: number, week: number, matches: any[] = []): Team => {
+export const processWeeklyFinances = (team: Team, season: number, week: number, matches: any[] = [], date?: GameDate): Team => {
     if (!team.budget || !team.budget.allocations) return team;
 
     const { marketing, recruiting, facilities, staffDevelopment } = team.budget.allocations;
@@ -5604,19 +5689,19 @@ export const processWeeklyFinances = (team: Team, season: number, week: number, 
     };
 
     // Ledger + YTD totals (non-game-day flows)
-    recordFinancialTransaction(updatedTeam, season, week, { description: 'Conference/Media Base Revenue', category: 'Revenue', amount: weeklyBaseRevenue, revenueKey: 'baseRevenue' });
-    if (weeklySponsor) recordFinancialTransaction(updatedTeam, season, week, { description: 'Sponsorship Payout', category: 'Revenue', amount: weeklySponsor, revenueKey: 'sponsorPayout' });
-    if (weeklyDonations) recordFinancialTransaction(updatedTeam, season, week, { description: 'Booster/Donation Income', category: 'Revenue', amount: weeklyDonations, revenueKey: 'donationRevenue' });
-    if (weeklyEndowment) recordFinancialTransaction(updatedTeam, season, week, { description: 'Endowment Support', category: 'Revenue', amount: weeklyEndowment, revenueKey: 'endowmentSupport' });
-    if (merchRevenue) recordFinancialTransaction(updatedTeam, season, week, { description: 'Merchandise Sales', category: 'Revenue', amount: Math.round(merchRevenue), revenueKey: 'merchandiseRevenue' });
-    if (licensingRevenue) recordFinancialTransaction(updatedTeam, season, week, { description: 'Licensing Revenue', category: 'Revenue', amount: Math.round(licensingRevenue), revenueKey: 'licensingRevenue' });
+    recordFinancialTransaction(updatedTeam, season, week, { description: 'Conference/Media Base Revenue', category: 'Revenue', amount: weeklyBaseRevenue, revenueKey: 'baseRevenue', date });
+    if (weeklySponsor) recordFinancialTransaction(updatedTeam, season, week, { description: 'Sponsorship Payout', category: 'Revenue', amount: weeklySponsor, revenueKey: 'sponsorPayout', date });
+    if (weeklyDonations) recordFinancialTransaction(updatedTeam, season, week, { description: 'Booster/Donation Income', category: 'Revenue', amount: weeklyDonations, revenueKey: 'donationRevenue', date });
+    if (weeklyEndowment) recordFinancialTransaction(updatedTeam, season, week, { description: 'Endowment Support', category: 'Revenue', amount: weeklyEndowment, revenueKey: 'endowmentSupport', date });
+    if (merchRevenue) recordFinancialTransaction(updatedTeam, season, week, { description: 'Merchandise Sales', category: 'Revenue', amount: Math.round(merchRevenue), revenueKey: 'merchandiseRevenue', date });
+    if (licensingRevenue) recordFinancialTransaction(updatedTeam, season, week, { description: 'Licensing Revenue', category: 'Revenue', amount: Math.round(licensingRevenue), revenueKey: 'licensingRevenue', date });
 
-    if (marketing) recordFinancialTransaction(updatedTeam, season, week, { description: 'Marketing & Ops', category: 'Expense', amount: -marketing, expenseKey: 'marketingExpenses' });
-    if (recruiting) recordFinancialTransaction(updatedTeam, season, week, { description: 'Recruiting', category: 'Expense', amount: -recruiting, expenseKey: 'recruitingExpenses' });
-    if (facilities) recordFinancialTransaction(updatedTeam, season, week, { description: 'Facilities Maintenance', category: 'Expense', amount: -facilities, expenseKey: 'facilitiesExpenses' });
-    if (staffDevelopment) recordFinancialTransaction(updatedTeam, season, week, { description: 'Staff Development', category: 'Staff Expenses', amount: -staffDevelopment, expenseKey: 'administrativeExpenses' });
-    if (weeklyAdmin) recordFinancialTransaction(updatedTeam, season, week, { description: 'Administrative Overhead', category: 'Expense', amount: -weeklyAdmin, expenseKey: 'administrativeExpenses' });
-    if (weeklyPayroll) recordFinancialTransaction(updatedTeam, season, week, { description: 'Staff Payroll', category: 'Staff Expenses', amount: -weeklyPayroll, expenseKey: 'staffPayrollExpenses' });
+    if (marketing) recordFinancialTransaction(updatedTeam, season, week, { description: 'Marketing & Ops', category: 'Expense', amount: -marketing, expenseKey: 'marketingExpenses', date });
+    if (recruiting) recordFinancialTransaction(updatedTeam, season, week, { description: 'Recruiting', category: 'Expense', amount: -recruiting, expenseKey: 'recruitingExpenses', date });
+    if (facilities) recordFinancialTransaction(updatedTeam, season, week, { description: 'Facilities Maintenance', category: 'Expense', amount: -facilities, expenseKey: 'facilitiesExpenses', date });
+    if (staffDevelopment) recordFinancialTransaction(updatedTeam, season, week, { description: 'Staff Development', category: 'Staff Expenses', amount: -staffDevelopment, expenseKey: 'administrativeExpenses', date });
+    if (weeklyAdmin) recordFinancialTransaction(updatedTeam, season, week, { description: 'Administrative Overhead', category: 'Expense', amount: -weeklyAdmin, expenseKey: 'administrativeExpenses', date });
+    if (weeklyPayroll) recordFinancialTransaction(updatedTeam, season, week, { description: 'Staff Payroll', category: 'Staff Expenses', amount: -weeklyPayroll, expenseKey: 'staffPayrollExpenses', date });
 
     return updatedTeam;
 };
@@ -5957,7 +6042,7 @@ export const processNBAWeeklyMoves = (state: GameState): GameState => {
     
     const getBudget = (team: Team) => Math.max(team.salaryCapSpace ?? 0, MIN_SALARY);
     const formatPlayerForLog = (player: Player) => {
-        const overallLabel = typeof player.overall === 'number' ? player.overall : '—';
+        const overallLabel = typeof player.overall === 'number' ? player.overall : 'â€”';
         return `${player.name} (${overallLabel})`;
     };
     const ELITE_OVERALL_THRESHOLD = 90;
@@ -5969,7 +6054,7 @@ export const processNBAWeeklyMoves = (state: GameState): GameState => {
         const remainingFreeAgents: NBAFreeAgent[] = [];
 
         freeAgents.forEach(entry => {
-            const teamName = entry.player?.team;
+            const teamName = (entry.player as any)?.team;
             if (entry.reason !== 'Expired' || !teamName) {
                 remainingFreeAgents.push(entry);
                 return;
@@ -6610,6 +6695,8 @@ export const runSimulationForWeek = (
         const nbaGameLogs: GameBoxScore[] = [];
 
         nbaWeekGames.forEach(game => {
+             if (game.played) return;
+
              const homeTeam = nbaTeamsByName.get(game.homeTeam);
              const awayTeam = nbaTeamsByName.get(game.awayTeam);
              if (homeTeam && awayTeam) {
@@ -6676,6 +6763,109 @@ export const runSimulationForWeek = (
     const { updatedRecruits } = processRecruitingWeek(teamsWithDevelopment, recruits, state.userTeam!.name, week, state.schedule, false, state.contactsMadeThisWeek, getContactPoints(state.userTeam), userCoachSkills);
 
     return { updatedAllTeams: teamsWithDevelopment, updatedSchedule, updatedRecruits, gameLogs, newUserTeamAttendance, updatedCoach, updatedNBATeams, updatedNBASchedule, updatedNBAFreeAgents, nbaTransactions, nbaDraftPickAssets: nbaDraftPickAssets ?? state.nbaDraftPickAssets };
+};
+
+
+export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; schedule: GameResult[][] } => {
+    const events: GameEvent[] = [];
+    // Legacy schedule array for compatibility, assuming 30 weeks
+    const schedule: GameResult[][] = Array(30).fill(null).map(() => []);
+
+    // Helper to add event
+    const addGameEvent = (date: GameDate, home: Team, away: Team, week: number) => {
+        const gameId = crypto.randomUUID();
+        const event: GameEvent = {
+            id: gameId,
+            date: { ...date },
+            type: EventType.GAME,
+            label: `${away.name} @ ${home.name}`,
+            processed: false,
+            payload: {
+                gameId,
+                homeTeam: home.name,
+                awayTeam: away.name,
+                isConference: home.conference === away.conference,
+                week
+            },
+        };
+        events.push(event);
+
+        // Also populate legacy schedule for now
+        schedule[week - 1].push({
+            homeTeam: home.name,
+            awayTeam: away.name,
+            homeScore: 0,
+            awayScore: 0,
+            played: false,
+            // winner: null,
+            isConference: home.conference === away.conference,
+            overtime: false
+        });
+    };
+
+    // --- 1. Non-Conference (Nov - Dec) ---
+    // Weeks 1-8. Each team plays ~8-10 games.
+    let currentDate = { ...SEASON_START_DATE };
+    const nonConfWeeks = 8;
+    
+    // Simple randomized matching for now to ensure every team plays
+    for (let w = 1; w <= nonConfWeeks; w++) {
+        const shuffled = [...teams].sort(() => Math.random() - 0.5);
+        // Pair them up
+        for (let i = 0; i < shuffled.length; i += 2) {
+            if (i + 1 < shuffled.length) {
+                const home = shuffled[i];
+                const away = shuffled[i+1];
+                // Games happen on Tue, Thu, Sat in early season usually
+                // Simple: Week 1 games on Day 1, Week 2 on Day 7+ etc
+                // Just spreading them out slightly for demo
+                const dayOffset = (w - 1) * 7 + (i % 3) * 2; // Spread across the week
+                const gameDate = addDays(SEASON_START_DATE, dayOffset);
+                addGameEvent(gameDate, home, away, w);
+            }
+        }
+    }
+
+    // --- 2. Conference Play (Jan - Feb) ---
+    // Weeks 9-20. 
+    // Group by conference
+    const conferences = Array.from(new Set(teams.map(t => t.conference)));
+    conferences.forEach(conf => {
+        if (!conf) return;
+        const confTeams = teams.filter(t => t.conference === conf);
+        if (confTeams.length < 2) return;
+
+        // Round robin (simple: each plays each other once or twice)
+        // For simplicity: pairings for weeks 9-22
+        const startWeek = 9;
+        const totalConfWeeks = 12;
+        
+        for (let w = 0; w < totalConfWeeks; w++) {
+            const weekNum = startWeek + w;
+            // Create pairings for this week
+            // Using a simple rotation or random pair that hasn't played much?
+            // "Swiss" style or simple shuffle for MVP
+            const shuffled = [...confTeams].sort(() => Math.random() - 0.5);
+            for (let i = 0; i < shuffled.length; i += 2) {
+                if (i + 1 < shuffled.length) {
+                    const home = shuffled[i];
+                    const away = shuffled[i+1];
+                     const dayOffset = (weekNum - 1) * 7 + (i % 2) * 2; // Tue/Thu/Sat
+                    const gameDate = addDays(SEASON_START_DATE, dayOffset);
+                    addGameEvent(gameDate, home, away, weekNum);
+                }
+            }
+        }
+    });
+
+    // Sort events by date
+    events.sort((a, b) => {
+        if (a.date.year !== b.date.year) return a.date.year - b.date.year;
+        if (a.date.month !== b.date.month) return MONTH_ORDER.indexOf(a.date.month) - MONTH_ORDER.indexOf(b.date.month);
+        return a.date.day - b.date.day;
+    });
+
+    return { events, schedule };
 };
 
 
@@ -7221,8 +7411,8 @@ export const calculateBoardPressure = (
             score: pipelineScore,
             actual: draftedThisYear,
             expected: baseline.targetDraftPicks,
-            displayActual: `${draftedThisYear} drafted • ${nbaAlumniRecent} NBA alumni (8y)`,
-            displayExpected: `${baseline.targetDraftPicks} drafted • ${expectedNbaAlumniRecent} NBA alumni (8y)`,
+            displayActual: `${draftedThisYear} drafted â€¢ ${nbaAlumniRecent} NBA alumni (8y)`,
+            displayExpected: `${baseline.targetDraftPicks} drafted â€¢ ${expectedNbaAlumniRecent} NBA alumni (8y)`,
         },
         {
             key: 'brand',
@@ -7231,8 +7421,8 @@ export const calculateBoardPressure = (
             score: brandScore,
             actual: avgFill ?? undefined,
             expected: baseline.targetAttendanceFillRate,
-            displayActual: `${avgFill == null ? 'N/A' : `${Math.round(avgFill * 100)}%`} fill • ${jerseyTracked ? `${Math.round(jerseyUnits).toLocaleString()} jerseys` : 'jerseys N/A'}`,
-            displayExpected: `${Math.round(baseline.targetAttendanceFillRate * 100)}% fill • ${jerseyTracked ? `${Math.round(baseline.targetJerseySales).toLocaleString()} jerseys` : 'jerseys N/A'}`,
+            displayActual: `${avgFill == null ? 'N/A' : `${Math.round(avgFill * 100)}%`} fill â€¢ ${jerseyTracked ? `${Math.round(jerseyUnits).toLocaleString()} jerseys` : 'jerseys N/A'}`,
+            displayExpected: `${Math.round(baseline.targetAttendanceFillRate * 100)}% fill â€¢ ${jerseyTracked ? `${Math.round(baseline.targetJerseySales).toLocaleString()} jerseys` : 'jerseys N/A'}`,
         },
         {
             key: 'finances',
@@ -7484,3 +7674,270 @@ export const processNBAOffseasonDevelopment = (player: Player): Player => {
     const newOverall = Math.min(99, Math.max(40, player.overall + change));
     return { ...player, overall: newOverall, startOfSeasonOverall: newOverall };
 };
+
+// Helper for day of year (Internal to this file now)
+const getDayOfYear = (d: GameDate) => {
+    const MONTH_ORDER_CAL = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const DAYS_IN_MONTH_MAP: Record<string, number> = { 'OCT': 31, 'NOV': 30, 'DEC': 31, 'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30, 'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31, 'SEP': 30 };
+    let total = 0;
+    for (let i = 0; i < MONTH_ORDER_CAL.indexOf(d.month); i++) {
+        total += DAYS_IN_MONTH_MAP[MONTH_ORDER_CAL[i]];
+    }
+    return total + d.day;
+};
+
+const processDailyNBAGames = (state: GameState, dayIndex: number): Partial<GameState> => {
+    if (!state.nbaSchedule || !state.nbaTeams) return {};
+
+    const weekIndex = Math.floor(dayIndex / 7);
+    if (!state.nbaSchedule[weekIndex]) return {};
+
+    const weekGames = state.nbaSchedule[weekIndex];
+    // Filter for games that happen specifically today
+    const todaysGames = weekGames.filter(g => g.day === dayIndex && !g.played);
+
+    if (todaysGames.length === 0) return {};
+
+    // Clone necessary arrays
+    const updatedNBASchedule = [...state.nbaSchedule];
+    const updatedWeekGames = [...weekGames];
+    updatedNBASchedule[weekIndex] = updatedWeekGames;
+
+    // We assume nbaTeams are seeded with correct league='NBA'
+    const updatedNBATeamsMap = new Map(state.nbaTeams.map(t => [t.name, { ...t, record: { ...t.record } }])); 
+
+    todaysGames.forEach(game => {
+        const home = updatedNBATeamsMap.get(game.homeTeam);
+        const away = updatedNBATeamsMap.get(game.awayTeam);
+        
+        if (home && away) {
+             // Simulate
+             const result = simulateGame(home, away, `NBA-S${state.season}-D${dayIndex}-${home.name}v${away.name}`);
+             
+             // Update Scores
+             const gameIndex = updatedWeekGames.indexOf(game);
+             if (gameIndex !== -1) {
+                 updatedWeekGames[gameIndex] = {
+                     ...game,
+                     homeScore: result.homeScore,
+                     awayScore: result.awayScore,
+                     played: true
+                 };
+             }
+
+             // Update Standings
+             if (result.homeScore > result.awayScore) {
+                 home.record.wins++;
+                 away.record.losses++;
+             } else {
+                 away.record.wins++;
+                 home.record.losses++;
+             }
+        }
+    });
+
+    return {
+        nbaSchedule: updatedNBASchedule,
+        nbaTeams: Array.from(updatedNBATeamsMap.values()),
+    };
+};
+
+export const runDailySimulation = (
+    state: GameState,
+    forceSimUserGame: boolean = false
+): { 
+    updatedState: Partial<GameState>, 
+    messages: string[],
+    shouldSimulateGameWeek?: number
+} => {
+    // 0. Setup
+    const messages: string[] = [];
+    let partialUpdate: Partial<GameState> = {};
+    const currentDate = state.currentDate || SEASON_START_DATE;
+
+    // 1. Process Events for Today
+    const eventsToday = state.eventQueue?.filter(e => isSameDate(e.date, currentDate) && !e.processed) || [];
+    
+    // Check for User's Game Today
+    const userGameEvent = eventsToday.find(e => e.type === EventType.GAME && (e.payload.homeTeam === state.userTeam?.name || e.payload.awayTeam === state.userTeam?.name));
+    
+    if (userGameEvent && !forceSimUserGame) {
+        // Stop simulation, let user play.
+        return {
+            updatedState: {},
+            messages: [`Game day against ${state.userTeam?.name === userGameEvent.payload.homeTeam ? userGameEvent.payload.awayTeam : userGameEvent.payload.homeTeam}!`],
+        };
+    }
+
+    // Check for NBA User Game
+    if (state.coach?.currentLeague === 'NBA' && state.coach.currentNBATeam && !forceSimUserGame && state.nbaSchedule) {
+        // Calculate day index for NBA schedule exactly as we do later in the function
+        const tempCurrentDate = state.currentDate || SEASON_START_DATE;
+        let startYear = tempCurrentDate.year;
+        const MONTH_ORDER_CHECK = ['OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP'];
+        if (MONTH_ORDER_CHECK.indexOf(tempCurrentDate.month) < MONTH_ORDER_CHECK.indexOf('OCT')) {
+                startYear = tempCurrentDate.year - 1;
+        }
+        const currentSeasonStart = { ...SEASON_START_DATE, year: startYear };
+        // We need to import getDayOfYear or duplicate logic? 
+        // Logic duplicated for safety/locality as helper is internal
+        // Re-use logic:
+        const getDayIndex = (d: GameDate) => {
+             const MONTH_ORDER_CAL = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+             const DAYS_IN_MONTH_MAP: Record<string, number> = { 'OCT': 31, 'NOV': 30, 'DEC': 31, 'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30, 'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31, 'SEP': 30 };
+             let total = 0;
+             for (let i = 0; i < MONTH_ORDER_CAL.indexOf(d.month); i++) {
+                 total += DAYS_IN_MONTH_MAP[MONTH_ORDER_CAL[i]];
+             }
+             return (d.year * 365 + total + d.day) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart));
+        };
+        // Wait, getDayOfYear is defined in file but not exported. I can't call it here easily if it's not exported.
+        // It is defined at line 7679. It IS accessible if in same file.
+        // Yes I am editing gameService.ts.
+        
+        const dayIndex = Math.max(0, (tempCurrentDate.year * 365 + getDayOfYear(tempCurrentDate)) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart)));
+        const weeklySchedule = state.nbaSchedule[Math.floor(dayIndex / 7)];
+
+        if (weeklySchedule) {
+            const userNbaGame = weeklySchedule.find(g => g.day === dayIndex && !g.played && (g.homeTeam === state.coach!.currentNBATeam || g.awayTeam === state.coach!.currentNBATeam));
+            if (userNbaGame) {
+                 return {
+                    updatedState: {},
+                    messages: [`NBA Game day against ${state.coach!.currentNBATeam === userNbaGame.homeTeam ? userNbaGame.awayTeam : userNbaGame.homeTeam}!`],
+                };
+            }
+        }
+    }
+
+    // 2. Simulate Non-User Games
+    // 2. Simulate Games (include user games if we reached here, i.e., forced or none existed)
+    const eventsToProcess = eventsToday.filter(e => e.type === EventType.GAME);
+    
+    // Clone schedule to avoid mutation (or assume mutation is handled by top-level state merge, but best to be safe)
+    // Note: Deep cloning entire schedule is expensive. We modify referenced objects since `partialUpdate` doesn't deeply merge arrays anyway.
+    // We will rely on direct modification of objects inside the state structure for now, matching legacy pattern, 
+    // OR we return a new schedule array if we want to be pure.
+    // Given the size of schedule, let's modify the specific week array.
+    
+    // Actually, `simulateGame` likely needs full team objects to update records.
+    // We need to access `state.allTeams`.
+    // And we need to return updated `allTeams` and `schedule`.
+    
+    // We can't easily do this inside `runDailySimulation` without access to `allTeams` if it's not passed or if we don't have a way to update it.
+    // `state` IS passed.
+    
+    const updatedSchedule = [...state.schedule];
+    const updatedTeamsMap = new Map<string, Team>(state.allTeams.map(t => [t.name, t]));
+    let gamesSimulatedCount = 0;
+
+    eventsToProcess.forEach(event => {
+        const { homeTeam, awayTeam, week } = event.payload;
+        const home = updatedTeamsMap.get(homeTeam);
+        const away = updatedTeamsMap.get(awayTeam);
+        
+        if (home && away) {
+            // Find game in legacy schedule
+            if (updatedSchedule[week - 1]) {
+                const gameIndex = updatedSchedule[week - 1].findIndex(g => g.homeTeam === homeTeam && g.awayTeam === awayTeam);
+                if (gameIndex !== -1) {
+                     // Simulate
+                     const result = simulateGame(home, away, event.label);
+                     
+                     // Update Schedule
+                     updatedSchedule[week - 1][gameIndex] = { ...result, played: true } as any;
+                     
+                     // Update Teams (Records)
+                     // simulateGame returns result but doesn't update team state in-place? 
+                     // Wait, `simulateGame` in legacy code (if I recall) computed result but record updates happened elsewhere?
+                     // Or maybe it DOES update teams? 
+                     // Usually `simulateGame` is pure-ish.
+                     // I need to update records manually if `simulateGame` doesn't.
+                     
+                     // Legacy logic usually updated records.
+                     // Let's assume `simulateGame` returns result and we need to apply it.
+                     home.record.wins += result.homeScore > result.awayScore ? 1 : 0;
+                     home.record.losses += result.homeScore < result.awayScore ? 1 : 0;
+                     away.record.wins += result.awayScore > result.homeScore ? 1 : 0;
+                     away.record.losses += result.awayScore < result.homeScore ? 1 : 0;
+                     
+                     gamesSimulatedCount++;
+                }
+            }
+        }
+        event.processed = true;
+    });
+
+
+    // 3. Advance Calendar
+    const nextDate = advanceDate(currentDate);
+    
+    // 4. Identify new context (Week, Day Type) — Legacy Logic Preservation
+    const currentWeekInfo = getWeekNumber(currentDate);
+    const nextWeekInfo = getWeekNumber(nextDate);
+    const isNewWeek = nextWeekInfo > currentWeekInfo;
+
+    // Financial & NBA Weekly Updates
+    if (isNewWeek) {
+        if (state.userTeam) {
+            // Update User Team Finances
+            // Note: We use updatedTeamsMap to get the latest version of the user team if it was modified
+            let userTeam = updatedTeamsMap.get(state.userTeam.name) || state.userTeam;
+            userTeam = processWeeklyFinances(userTeam, state.season, nextWeekInfo, [], nextDate);
+            updatedTeamsMap.set(userTeam.name, userTeam);
+        }
+
+        // NBA Weekly Moves
+        // We pass the current state but merged with our partial updates so far (like date)
+        const tempState = { ...state, ...partialUpdate, currentDate: nextDate, week: nextWeekInfo };
+        const nbaStateUpdates = processNBAWeeklyMoves(tempState);
+        Object.assign(partialUpdate, {
+            nbaTeams: nbaStateUpdates.nbaTeams,
+            nbaFreeAgents: nbaStateUpdates.nbaFreeAgents,
+            nbaTransactions: nbaStateUpdates.nbaTransactions,
+            nbaDraftPickAssets: nbaStateUpdates.nbaDraftPickAssets
+        });
+    }
+
+    // Finalize Teams Update
+    if (gamesSimulatedCount > 0 || isNewWeek) {
+        partialUpdate.allTeams = Array.from(updatedTeamsMap.values());
+        if (state.userTeam) {
+             partialUpdate.userTeam = updatedTeamsMap.get(state.userTeam.name);
+        }
+    }
+    
+    // Finalize Schedule Update (if games simulated)
+    if (gamesSimulatedCount > 0) {
+        partialUpdate.schedule = updatedSchedule;
+    }
+
+    // Mark events as processed
+    const processedIds = new Set(eventsToProcess.map(e => e.id));
+    partialUpdate.eventQueue = state.eventQueue.map(e => processedIds.has(e.id) ? { ...e, processed: true } : e);
+
+    const messagesDetails: string[] = [];
+
+    partialUpdate.currentDate = nextDate;
+    partialUpdate.week = isNewWeek ? nextWeekInfo : state.week;
+
+    // 5. NBA Simulation Logic (Preserved)
+    // Heuristic: Tuesday (0), Wed (1), Thu (2), Fri (3), Sat (4), Sun (5), Mon (6)
+    // We simulate on Saturday (4).
+    let startYear = nextDate.year;
+    const MONTH_ORDER_CHECK = ['OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP'];
+    if (MONTH_ORDER_CHECK.indexOf(nextDate.month) < MONTH_ORDER_CHECK.indexOf('OCT')) {
+         startYear = nextDate.year - 1;
+    }
+    const currentSeasonStart = { ...SEASON_START_DATE, year: startYear };
+    const dayIndex = Math.max(0, (nextDate.year * 365 + getDayOfYear(nextDate)) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart)));
+    
+    const nbaUpdates = processDailyNBAGames({ ...state, ...partialUpdate }, dayIndex);
+    Object.assign(partialUpdate, nbaUpdates);
+    
+    return {
+        updatedState: partialUpdate,
+        messages: messagesDetails
+    };
+};
+
+

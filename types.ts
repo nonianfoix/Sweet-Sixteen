@@ -19,6 +19,14 @@ export type SponsorName =
   | 'New Balance'
   | 'Puma';
 
+export type Month = 'JAN' | 'FEB' | 'MAR' | 'APR' | 'MAY' | 'JUN' | 'JUL' | 'AUG' | 'SEP' | 'OCT' | 'NOV' | 'DEC';
+
+export interface GameDate {
+    day: number;
+    month: Month;
+    year: number;
+}
+
 export type GameAdjustment = 'neutral' | 'tempo_push' | 'tempo_slow' | 'focus_inside' | 'focus_outside' | 'aggressive_defense' | 'conservative_defense';
 
 export enum GameStatus {
@@ -210,13 +218,23 @@ export interface TransferPortalState {
     day: number;
 }
 
-export type RecruitArchetype = 'BagChaser' | 'Hooper' | 'HometownHero' | 'Academic';
+export type RecruitArchetype = 'Mercenary' | 'HometownHero' | 'ProcessTrustor' | 'FameSeeker';
 export type Dealbreaker = 'NIL' | 'PlayingTime' | 'Proximity' | 'Academics' | 'None';
 export type VisitStatus = 'None' | 'Scheduled' | 'Completed' | 'Cancelled';
 
 export interface Pipeline {
     state: string;
-    tier: 'Gold' | 'Silver' | 'Bronze'; // Gold = 1.5x, Silver = 1.25x, Bronze = 1.1x
+    tier: 'Gold' | 'Silver' | 'Bronze' | 'Platinum'; // Added Platinum
+}
+
+export interface RecruitMotivation {
+    proximity: number;
+    playingTime: number;
+    nil: number;
+    exposure: number;
+    relationship: number;
+    development: number;
+    academics: number;
 }
 
 export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seasonStats' | 'isTargeted'> {
@@ -238,6 +256,11 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   state: string;
   isGem?: boolean;
   isBust?: boolean;
+
+  // New Fields for Enhanced Recruiting
+  motivations: RecruitMotivation;
+  softCommitment: boolean;
+  resilience: number; // 0-100, difficulty to flip
 }
 
 export type RotationPreference = 'balanced' | 'starterHeavy' | 'sevenSecond' | 'threeAndD' | 'defensive';
@@ -249,6 +272,7 @@ export type GameAction =
   | { type: 'UPDATE_ZONE_PRICING'; payload: { [key in SeatSegmentKey]: number } }
   | { type: 'RUN_ATTENDANCE_SIM'; payload?: { [key in SeatSegmentKey]?: number } }
   | { type: 'SIMULATE_WEEK' }
+  | { type: 'SIMULATE_DAY' }
   | { type: 'SIMULATE_SEASON' }
   | { type: 'SIMULATE_TRANSFER_PORTAL_DAY' }
   | { type: 'ADVANCE_TOURNAMENT_ROUND' }
@@ -1098,6 +1122,7 @@ export interface GameResult {
   awayScore: number;
   played: boolean;
   isPlayoffGame?: boolean;
+  day?: number;
 }
 
 export interface PlayerGameStatsData {
@@ -1460,14 +1485,41 @@ export interface NBAFreeAgent {
     weekAdded?: number;
 }
 
+import { GameDate } from './types'; // Ensure correct import or definition
+
+export enum EventType {
+    GAME = 'GAME',
+    PRACTICE = 'PRACTICE',
+    RECRUITING = 'RECRUITING',
+    TRAINING = 'TRAINING',
+    SEASON_TRANSITION = 'SEASON_TRANSITION',
+    SIGNING_DAY = 'SIGNING_DAY',
+    TOURNAMENT_ROUND = 'TOURNAMENT_ROUND',
+    NBA_GAME = 'NBA_GAME',
+    NBA_DRAFT = 'NBA_DRAFT',
+    OFFSEASON_TASK = 'OFFSEASON_TASK'
+}
+
+export interface GameEvent {
+    id: string;
+    type: EventType;
+    date: GameDate;
+    label: string;
+    payload?: any;
+    processed: boolean;
+}
+
 export interface GameState {
     version: number;
+    currentDate: GameDate;
+    eventQueue: GameEvent[];
     status: GameStatus;
     previousStatus?: GameStatus | null;
     userTeam: Team | null;
   allTeams: Team[];
   recruits: Recruit[];
   season: number;
+  currentDate: GameDate;
   gameInSeason: number;
   week: number;
   schedule: GameResult[][];

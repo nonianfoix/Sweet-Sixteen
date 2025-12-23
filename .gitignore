@@ -106,3 +106,4 @@ yolo_setup.txt
 runs/
 backup/
 NonEss/
+!NonEss/next_update_proposal.txt

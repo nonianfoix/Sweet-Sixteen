@@ -33,7 +33,7 @@ const AlumniTab: React.FC<AlumniTabProps> = ({ state, userTeam, dispatch, colors
     };
 
     const archetypeCounts = useMemo(() => {
-        const counts: Record<AlumniArchetype, number> = { Tech: 0, Finance: 0, Local: 0, Political: 0, Health: 0, Arts: 0 };
+        const counts: Record<AlumniArchetype, number> = { Tech: 0, Finance: 0, Local: 0, Political: 0, Health: 0, Arts: 0, Titan: 0 };
         userTeam.alumniRegistry?.allAlumni.forEach(a => {
             if (counts[a.archetype] !== undefined) counts[a.archetype]++;
         });
