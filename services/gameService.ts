@@ -7886,6 +7886,41 @@ export const runDailySimulation = (
             updatedTeamsMap.set(userTeam.name, userTeam);
         }
 
+        const userCoachSkills = Object.keys(state.coach?.skills || {});
+        const teamsForWeeklyProcessing = JSON.parse(JSON.stringify(Array.from(updatedTeamsMap.values()))) as Team[];
+        const teamsWithDevelopment = processInSeasonDevelopment(teamsForWeeklyProcessing, userCoachSkills);
+
+        let updatedRecruits = state.recruits;
+        if (state.userTeam && currentWeekInfo > 0) {
+            const recruitingResult = processRecruitingWeek(
+                teamsWithDevelopment,
+                state.recruits,
+                state.userTeam.name,
+                currentWeekInfo,
+                updatedSchedule,
+                false,
+                state.contactsMadeThisWeek,
+                getContactPoints(state.userTeam),
+                userCoachSkills
+            );
+            updatedRecruits = recruitingResult.updatedRecruits;
+        }
+
+        partialUpdate.recruits = updatedRecruits;
+        partialUpdate.allTeams = teamsWithDevelopment;
+        if (state.userTeam) {
+            const updatedUserTeam = teamsWithDevelopment.find(team => team.name === state.userTeam?.name);
+            if (updatedUserTeam) partialUpdate.userTeam = updatedUserTeam;
+        }
+
+        if (currentWeekInfo > 0) {
+            partialUpdate.lastSimResults = updatedSchedule[currentWeekInfo - 1] || [];
+            partialUpdate.lastSimWeekKey = `${state.season}-${currentWeekInfo}`;
+        }
+
+        partialUpdate.contactsMadeThisWeek = 0;
+        partialUpdate.trainingPointsUsedThisWeek = 0;
+
         // NBA Weekly Moves
         // We pass the current state but merged with our partial updates so far (like date)
         const tempState = { ...state, ...partialUpdate, currentDate: nextDate, week: nextWeekInfo };
@@ -7900,9 +7935,11 @@ export const runDailySimulation = (
 
     // Finalize Teams Update
     if (gamesSimulatedCount > 0 || isNewWeek) {
-        partialUpdate.allTeams = Array.from(updatedTeamsMap.values());
+        const teamsToUse = partialUpdate.allTeams || Array.from(updatedTeamsMap.values());
+        partialUpdate.allTeams = teamsToUse;
         if (state.userTeam) {
-             partialUpdate.userTeam = updatedTeamsMap.get(state.userTeam.name);
+            const updatedUserTeam = (teamsToUse || []).find(team => team.name === state.userTeam?.name);
+            if (updatedUserTeam) partialUpdate.userTeam = updatedUserTeam;
         }
     }
     
@@ -7919,6 +7956,9 @@ export const runDailySimulation = (
 
     partialUpdate.currentDate = nextDate;
     partialUpdate.week = isNewWeek ? nextWeekInfo : state.week;
+    if (nextWeekInfo > 0) {
+        partialUpdate.gameInSeason = nextWeekInfo;
+    }
 
     // 5. NBA Simulation Logic (Preserved)
     // Heuristic: Tuesday (0), Wed (1), Thu (2), Fri (3), Sat (4), Sun (5), Mon (6)
@@ -7939,5 +7979,4 @@ export const runDailySimulation = (
         messages: messagesDetails
     };
 };
-
 
