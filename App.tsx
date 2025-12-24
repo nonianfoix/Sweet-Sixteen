@@ -2024,6 +2024,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             };
         }
 
+        if (!shouldSimulateGameWeek && newState.gameInSeason > 31 && newState.status !== GameStatus.TOURNAMENT && !newState.tournament) {
+            newState = {
+                ...newState,
+                status: GameStatus.TOURNAMENT,
+                tournament: createTournament(newState.allTeams),
+            };
+        }
+
         return { ...newState, toastMessage };
     }
 
