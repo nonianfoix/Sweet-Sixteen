@@ -27,6 +27,10 @@ export interface GameDate {
     year: number;
 }
 
+// Canonical local calendar date key used for all scheduled games/events.
+// Format: "YYYY-MM-DD" (ISO local date, no time component).
+export type ISODate = string;
+
 export type GameAdjustment = 'neutral' | 'tempo_push' | 'tempo_slow' | 'focus_inside' | 'focus_outside' | 'aggressive_defense' | 'conservative_defense';
 
 export enum GameStatus {
@@ -1123,6 +1127,8 @@ export interface GameResult {
   played: boolean;
   isPlayoffGame?: boolean;
   day?: number;
+  date?: ISODate;
+  gameEventId?: string;
 }
 
 export interface PlayerGameStatsData {
@@ -1485,8 +1491,6 @@ export interface NBAFreeAgent {
     weekAdded?: number;
 }
 
-import { GameDate } from './types'; // Ensure correct import or definition
-
 export enum EventType {
     GAME = 'GAME',
     PRACTICE = 'PRACTICE',
@@ -1503,15 +1507,57 @@ export enum EventType {
 export interface GameEvent {
     id: string;
     type: EventType;
-    date: GameDate;
+    date: ISODate;
     label: string;
     payload?: any;
     processed: boolean;
 }
 
+export type ScheduledGameType = 'REG' | 'CONF_TOURNEY' | 'NCAA';
+
+export interface ScheduledGameEvent {
+    id: string;
+    seasonYear: number; // start year, e.g. 2025 for 2025–26
+    date: ISODate; // canonical
+    type: ScheduledGameType;
+    homeTeamId: string;
+    awayTeamId: string;
+    neutralSite?: boolean;
+    conferenceId?: string;
+    round?: string;
+    locked?: boolean;
+}
+
+export interface TeamSchedule {
+    teamId: string;
+    gamesByDate: Record<ISODate, string>; // date -> ScheduledGameEvent.id
+}
+
+export interface SeasonAnchors {
+    seasonYear: number;
+    seasonStart: ISODate;
+    regularSeasonEnd: ISODate;
+    confTourneyStart: ISODate;
+    confTourneyEnd: ISODate;
+    selectionSunday: ISODate;
+    ncaa: {
+        firstFourTue: ISODate;
+        firstFourWed: ISODate;
+        r64Thu: ISODate;
+        r64Fri: ISODate;
+        r32Sat: ISODate;
+        r32Sun: ISODate;
+        s16Thu: ISODate;
+        s16Fri: ISODate;
+        e8Sat: ISODate;
+        e8Sun: ISODate;
+        finalFourSat: ISODate;
+        titleMon: ISODate;
+    };
+}
+
 export interface GameState {
     version: number;
-    currentDate: GameDate;
     eventQueue: GameEvent[];
     status: GameStatus;
     previousStatus?: GameStatus | null;
@@ -1519,10 +1565,15 @@ export interface GameState {
   allTeams: Team[];
   recruits: Recruit[];
   season: number;
-  currentDate: GameDate;
+  seasonYear: number;
+  seasonAnchors: SeasonAnchors;
+  currentDate: ISODate;
   gameInSeason: number;
   week: number;
   schedule: GameResult[][];
+  scheduledGamesById: Record<string, ScheduledGameEvent>;
+  teamSchedulesById: Record<string, TeamSchedule>;
+  scheduledEventIdsByDate: Record<ISODate, string[]>;
   contactsMadeThisWeek: number;
   trainingPointsUsedThisWeek: number;
   lastSimResults: GameResult[];

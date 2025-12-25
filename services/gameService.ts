@@ -41,7 +41,22 @@ import { ensurePlayerNilProfile, calculateTeamNilBudget, updateNILCollective } f
 import { generateAlumni, updateAlumniRegistry, generateBaselineAlumniRegistry, recalculateAlumniInfluence, processAlumniWealthGrowth } from './alumniService';
 import { generateSponsorQuests } from './questService';
 import { getNBASalaryProfileForName, getRealNbaRatingForName } from './nbaData';
-import { advanceDate, getWeekNumber, SEASON_START_DATE, addDays, compareDates, isSameDate, formatDate, MONTH_ORDER } from './dateService';
+import {
+    advanceDate,
+    getWeekNumber,
+    SEASON_START_DATE,
+    addDays,
+    addDaysISO,
+    compareDates,
+    isSameDate,
+    isSameISO,
+    formatDate,
+    MONTH_ORDER,
+    gameDateToJsDate,
+    jsDateToGameDate
+} from './dateService';
+import { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './seasonScheduleService';
+export { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './seasonScheduleService';
 
 export const randomBetween = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 export const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -425,10 +440,11 @@ export const buildInitialDraftPickAssets = (): DraftPickAsset[] => {
     });
 };
 
-export const seasonToCalendarYear = (season: number) => BASE_CALENDAR_YEAR + season + 1;
+// `season` is an ordinal (Season 1 == 2025–26); this converts to the season start year.
+export const seasonToCalendarYear = (season: number) => BASE_CALENDAR_YEAR + season;
 
 const INITIAL_NBA_SALARY_YEAR_OFFSET = Math.max(0, seasonToCalendarYear(1) - 1 - REAL_WORLD_REFERENCE_YEAR);
-const calendarYearToSeason = (year: number) => year - BASE_CALENDAR_YEAR - 1;
+const calendarYearToSeason = (year: number) => year - BASE_CALENDAR_YEAR;
 
 const CHAMPION_BY_YEAR = new Map<number, string>();
 const RUNNER_UP_BY_YEAR = new Map<number, string>();
@@ -2689,7 +2705,59 @@ export const initializeGameWorld = (userTeamName: string) => {
           earliestSeason,
       }),
   }));
-  const { events, schedule } = generateScheduleEvents(allTeams);
+
+  const season = 1;
+  const seasonYear = seasonToCalendarYear(season);
+  const seasonAnchors = buildSeasonAnchors(seasonYear);
+
+  const scheduleSettings = {
+      regularSeasonGamesPerTeam: 31,
+      // Override here for per-conference targets; otherwise defaults by tier (Power/Mid/Low) apply.
+      conferenceGamesByConference: {
+          SEC: 20,
+          'Big Ten': 20,
+          'Big 12': 20,
+          ACC: 20,
+          'Big East': 20,
+          'Mountain West': 18,
+          AAC: 18,
+          'A-10': 18,
+          WCC: 18,
+          'Missouri Valley': 18,
+      } as Record<string, number>,
+  };
+
+  const generatedSchedule = generateSeasonSchedule(seasonYear, allTeams, scheduleSettings, seasonAnchors);
+  const schedule = generatedSchedule.legacySchedule;
+
+  const validationIssues = validateSeasonSchedule(generatedSchedule, allTeams, scheduleSettings);
+  if (validationIssues.length) {
+      // Non-fatal: surface issues in console for now to avoid bricking saved games.
+      console.warn('Schedule validation issues:', validationIssues);
+  }
+
+  const eventQueue: GameEvent[] = [];
+  generatedSchedule.regularSeasonDates.forEach((dateISO, idx) => {
+      const week = idx + 1;
+      const ids = generatedSchedule.scheduledEventIdsByDate[dateISO] || [];
+      for (const id of ids) {
+          const ev = generatedSchedule.scheduledGamesById[id];
+          eventQueue.push({
+              id,
+              date: dateISO,
+              type: EventType.GAME,
+              label: `${ev.awayTeamId} @ ${ev.homeTeamId}`,
+              processed: false,
+              payload: {
+                  scheduledGameEventId: id,
+                  homeTeam: ev.homeTeamId,
+                  awayTeam: ev.awayTeamId,
+                  isConference: !!ev.conferenceId,
+                  week,
+              },
+          });
+      }
+  });
   let recruits: Recruit[] = Array.from({ length: 350 }, createRecruit);
   recruits = runInitialRecruitingOffers(allTeams, recruits);
   const { sponsors: finalSponsors, updatedTeams } = recalculateSponsorLandscape(allTeams, initialSponsors, null);
@@ -2707,7 +2775,28 @@ export const initializeGameWorld = (userTeamName: string) => {
   const eventPlaybookCatalog = buildEventPlaybookCatalog();
   // Pass allTeams to buildSponsorQuestDeck so we can match quests to current sponsors
   const sponsorQuestDeck = allTeams.flatMap(team => generateSponsorQuests(team, 1));
-  return { allTeams, schedule, eventQueue: events, recruits, sponsors: finalSponsors, initialHistory, internationalProspects, nbaSimulation, nbaTeams, nbaSchedule, eventPlaybookCatalog, sponsorQuestDeck, nbaFreeAgents: generateInitialNBAFreeAgents(), nbaTransactions: [], nbaDraftPickAssets: buildInitialDraftPickAssets() };
+  return {
+      allTeams,
+      schedule,
+      eventQueue,
+      seasonYear,
+      seasonAnchors,
+      scheduledGamesById: generatedSchedule.scheduledGamesById,
+      teamSchedulesById: generatedSchedule.teamSchedulesById,
+      scheduledEventIdsByDate: generatedSchedule.scheduledEventIdsByDate,
+      recruits,
+      sponsors: finalSponsors,
+      initialHistory,
+      internationalProspects,
+      nbaSimulation,
+      nbaTeams,
+      nbaSchedule,
+      eventPlaybookCatalog,
+      sponsorQuestDeck,
+      nbaFreeAgents: generateInitialNBAFreeAgents(),
+      nbaTransactions: [],
+      nbaDraftPickAssets: buildInitialDraftPickAssets()
+  };
 };
 
 const SCHEDULING_CONFIG = {
@@ -6772,11 +6861,11 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
     const schedule: GameResult[][] = Array(30).fill(null).map(() => []);
 
     // Helper to add event
-    const addGameEvent = (date: GameDate, home: Team, away: Team, week: number) => {
+    const addGameEvent = (date: string, home: Team, away: Team, week: number) => {
         const gameId = crypto.randomUUID();
         const event: GameEvent = {
             id: gameId,
-            date: { ...date },
+            date,
             type: EventType.GAME,
             label: `${away.name} @ ${home.name}`,
             processed: false,
@@ -6797,6 +6886,8 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
             homeScore: 0,
             awayScore: 0,
             played: false,
+            date,
+            gameEventId: gameId,
             // winner: null,
             isConference: home.conference === away.conference,
             overtime: false
@@ -6805,7 +6896,6 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
 
     // --- 1. Non-Conference (Nov - Dec) ---
     // Weeks 1-8. Each team plays ~8-10 games.
-    let currentDate = { ...SEASON_START_DATE };
     const nonConfWeeks = 8;
     
     // Simple randomized matching for now to ensure every team plays
@@ -6820,7 +6910,7 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
                 // Simple: Week 1 games on Day 1, Week 2 on Day 7+ etc
                 // Just spreading them out slightly for demo
                 const dayOffset = (w - 1) * 7 + (i % 3) * 2; // Spread across the week
-                const gameDate = addDays(SEASON_START_DATE, dayOffset);
+                const gameDate = addDaysISO(SEASON_START_DATE, dayOffset);
                 addGameEvent(gameDate, home, away, w);
             }
         }
@@ -6851,7 +6941,7 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
                     const home = shuffled[i];
                     const away = shuffled[i+1];
                      const dayOffset = (weekNum - 1) * 7 + (i % 2) * 2; // Tue/Thu/Sat
-                    const gameDate = addDays(SEASON_START_DATE, dayOffset);
+                    const gameDate = addDaysISO(SEASON_START_DATE, dayOffset);
                     addGameEvent(gameDate, home, away, weekNum);
                 }
             }
@@ -6860,9 +6950,7 @@ export const generateScheduleEvents = (teams: Team[]): { events: GameEvent[]; sc
 
     // Sort events by date
     events.sort((a, b) => {
-        if (a.date.year !== b.date.year) return a.date.year - b.date.year;
-        if (a.date.month !== b.date.month) return MONTH_ORDER.indexOf(a.date.month) - MONTH_ORDER.indexOf(b.date.month);
-        return a.date.day - b.date.day;
+        return a.date.localeCompare(b.date);
     });
 
     return { events, schedule };
@@ -7750,233 +7838,26 @@ export const runDailySimulation = (
     messages: string[],
     shouldSimulateGameWeek?: number
 } => {
-    // 0. Setup
-    const messages: string[] = [];
-    let partialUpdate: Partial<GameState> = {};
-    const currentDate = state.currentDate || SEASON_START_DATE;
+    const currentDate = state.currentDate || state.seasonAnchors?.seasonStart || SEASON_START_DATE;
+    const eventsToday = state.eventQueue?.filter(e => isSameISO(e.date, currentDate) && !e.processed) || [];
+    const gameEventsToday = eventsToday.filter(e => e.type === EventType.GAME);
 
-    // 1. Process Events for Today
-    const eventsToday = state.eventQueue?.filter(e => isSameDate(e.date, currentDate) && !e.processed) || [];
-    
-    // Check for User's Game Today
-    const userGameEvent = eventsToday.find(e => e.type === EventType.GAME && (e.payload.homeTeam === state.userTeam?.name || e.payload.awayTeam === state.userTeam?.name));
-    
-    if (userGameEvent && !forceSimUserGame) {
-        // Stop simulation, let user play.
-        return {
-            updatedState: {},
-            messages: [`Game day against ${state.userTeam?.name === userGameEvent.payload.homeTeam ? userGameEvent.payload.awayTeam : userGameEvent.payload.homeTeam}!`],
-        };
+    if (gameEventsToday.length > 0) {
+        const userGameEvent = state.userTeam
+            ? gameEventsToday.find(e => e.payload?.homeTeam === state.userTeam!.name || e.payload?.awayTeam === state.userTeam!.name)
+            : undefined;
+
+        if (userGameEvent && !forceSimUserGame) {
+            const opponent = state.userTeam!.name === userGameEvent.payload.homeTeam
+                ? userGameEvent.payload.awayTeam
+                : userGameEvent.payload.homeTeam;
+            return { updatedState: {}, messages: [`Game day against ${opponent}!`] };
+        }
+
+        const week = Number(gameEventsToday[0]?.payload?.week || state.gameInSeason || 1);
+        return { updatedState: {}, messages: [], shouldSimulateGameWeek: week };
     }
 
-    // Check for NBA User Game
-    if (state.coach?.currentLeague === 'NBA' && state.coach.currentNBATeam && !forceSimUserGame && state.nbaSchedule) {
-        // Calculate day index for NBA schedule exactly as we do later in the function
-        const tempCurrentDate = state.currentDate || SEASON_START_DATE;
-        let startYear = tempCurrentDate.year;
-        const MONTH_ORDER_CHECK = ['OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP'];
-        if (MONTH_ORDER_CHECK.indexOf(tempCurrentDate.month) < MONTH_ORDER_CHECK.indexOf('OCT')) {
-                startYear = tempCurrentDate.year - 1;
-        }
-        const currentSeasonStart = { ...SEASON_START_DATE, year: startYear };
-        // We need to import getDayOfYear or duplicate logic? 
-        // Logic duplicated for safety/locality as helper is internal
-        // Re-use logic:
-        const getDayIndex = (d: GameDate) => {
-             const MONTH_ORDER_CAL = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-             const DAYS_IN_MONTH_MAP: Record<string, number> = { 'OCT': 31, 'NOV': 30, 'DEC': 31, 'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30, 'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31, 'SEP': 30 };
-             let total = 0;
-             for (let i = 0; i < MONTH_ORDER_CAL.indexOf(d.month); i++) {
-                 total += DAYS_IN_MONTH_MAP[MONTH_ORDER_CAL[i]];
-             }
-             return (d.year * 365 + total + d.day) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart));
-        };
-        // Wait, getDayOfYear is defined in file but not exported. I can't call it here easily if it's not exported.
-        // It is defined at line 7679. It IS accessible if in same file.
-        // Yes I am editing gameService.ts.
-        
-        const dayIndex = Math.max(0, (tempCurrentDate.year * 365 + getDayOfYear(tempCurrentDate)) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart)));
-        const weeklySchedule = state.nbaSchedule[Math.floor(dayIndex / 7)];
-
-        if (weeklySchedule) {
-            const userNbaGame = weeklySchedule.find(g => g.day === dayIndex && !g.played && (g.homeTeam === state.coach!.currentNBATeam || g.awayTeam === state.coach!.currentNBATeam));
-            if (userNbaGame) {
-                 return {
-                    updatedState: {},
-                    messages: [`NBA Game day against ${state.coach!.currentNBATeam === userNbaGame.homeTeam ? userNbaGame.awayTeam : userNbaGame.homeTeam}!`],
-                };
-            }
-        }
-    }
-
-    // 2. Simulate Non-User Games
-    // 2. Simulate Games (include user games if we reached here, i.e., forced or none existed)
-    const eventsToProcess = eventsToday.filter(e => e.type === EventType.GAME);
-    
-    // Clone schedule to avoid mutation (or assume mutation is handled by top-level state merge, but best to be safe)
-    // Note: Deep cloning entire schedule is expensive. We modify referenced objects since `partialUpdate` doesn't deeply merge arrays anyway.
-    // We will rely on direct modification of objects inside the state structure for now, matching legacy pattern, 
-    // OR we return a new schedule array if we want to be pure.
-    // Given the size of schedule, let's modify the specific week array.
-    
-    // Actually, `simulateGame` likely needs full team objects to update records.
-    // We need to access `state.allTeams`.
-    // And we need to return updated `allTeams` and `schedule`.
-    
-    // We can't easily do this inside `runDailySimulation` without access to `allTeams` if it's not passed or if we don't have a way to update it.
-    // `state` IS passed.
-    
-    const updatedSchedule = [...state.schedule];
-    const updatedTeamsMap = new Map<string, Team>(state.allTeams.map(t => [t.name, t]));
-    let gamesSimulatedCount = 0;
-
-    eventsToProcess.forEach(event => {
-        const { homeTeam, awayTeam, week } = event.payload;
-        const home = updatedTeamsMap.get(homeTeam);
-        const away = updatedTeamsMap.get(awayTeam);
-        
-        if (home && away) {
-            // Find game in legacy schedule
-            if (updatedSchedule[week - 1]) {
-                const gameIndex = updatedSchedule[week - 1].findIndex(g => g.homeTeam === homeTeam && g.awayTeam === awayTeam);
-                if (gameIndex !== -1) {
-                     // Simulate
-                     const result = simulateGame(home, away, event.label);
-                     
-                     // Update Schedule
-                     updatedSchedule[week - 1][gameIndex] = { ...result, played: true } as any;
-                     
-                     // Update Teams (Records)
-                     // simulateGame returns result but doesn't update team state in-place? 
-                     // Wait, `simulateGame` in legacy code (if I recall) computed result but record updates happened elsewhere?
-                     // Or maybe it DOES update teams? 
-                     // Usually `simulateGame` is pure-ish.
-                     // I need to update records manually if `simulateGame` doesn't.
-                     
-                     // Legacy logic usually updated records.
-                     // Let's assume `simulateGame` returns result and we need to apply it.
-                     home.record.wins += result.homeScore > result.awayScore ? 1 : 0;
-                     home.record.losses += result.homeScore < result.awayScore ? 1 : 0;
-                     away.record.wins += result.awayScore > result.homeScore ? 1 : 0;
-                     away.record.losses += result.awayScore < result.homeScore ? 1 : 0;
-                     
-                     gamesSimulatedCount++;
-                }
-            }
-        }
-        event.processed = true;
-    });
-
-
-    // 3. Advance Calendar
-    const nextDate = advanceDate(currentDate);
-    
-    // 4. Identify new context (Week, Day Type) — Legacy Logic Preservation
-    const currentWeekInfo = getWeekNumber(currentDate);
-    const nextWeekInfo = getWeekNumber(nextDate);
-    const isNewWeek = nextWeekInfo > currentWeekInfo;
-
-    // Financial & NBA Weekly Updates
-    if (isNewWeek) {
-        if (state.userTeam) {
-            // Update User Team Finances
-            // Note: We use updatedTeamsMap to get the latest version of the user team if it was modified
-            let userTeam = updatedTeamsMap.get(state.userTeam.name) || state.userTeam;
-            userTeam = processWeeklyFinances(userTeam, state.season, nextWeekInfo, [], nextDate);
-            updatedTeamsMap.set(userTeam.name, userTeam);
-        }
-
-        const userCoachSkills = Object.keys(state.coach?.skills || {});
-        const teamsForWeeklyProcessing = JSON.parse(JSON.stringify(Array.from(updatedTeamsMap.values()))) as Team[];
-        const teamsWithDevelopment = processInSeasonDevelopment(teamsForWeeklyProcessing, userCoachSkills);
-
-        let updatedRecruits = state.recruits;
-        if (state.userTeam && currentWeekInfo > 0) {
-            const recruitingResult = processRecruitingWeek(
-                teamsWithDevelopment,
-                state.recruits,
-                state.userTeam.name,
-                currentWeekInfo,
-                updatedSchedule,
-                false,
-                state.contactsMadeThisWeek,
-                getContactPoints(state.userTeam),
-                userCoachSkills
-            );
-            updatedRecruits = recruitingResult.updatedRecruits;
-        }
-
-        partialUpdate.recruits = updatedRecruits;
-        partialUpdate.allTeams = teamsWithDevelopment;
-        if (state.userTeam) {
-            const updatedUserTeam = teamsWithDevelopment.find(team => team.name === state.userTeam?.name);
-            if (updatedUserTeam) partialUpdate.userTeam = updatedUserTeam;
-        }
-
-        if (currentWeekInfo > 0) {
-            partialUpdate.lastSimResults = updatedSchedule[currentWeekInfo - 1] || [];
-            partialUpdate.lastSimWeekKey = `${state.season}-${currentWeekInfo}`;
-        }
-
-        partialUpdate.contactsMadeThisWeek = 0;
-        partialUpdate.trainingPointsUsedThisWeek = 0;
-
-        // NBA Weekly Moves
-        // We pass the current state but merged with our partial updates so far (like date)
-        const tempState = { ...state, ...partialUpdate, currentDate: nextDate, week: nextWeekInfo };
-        const nbaStateUpdates = processNBAWeeklyMoves(tempState);
-        Object.assign(partialUpdate, {
-            nbaTeams: nbaStateUpdates.nbaTeams,
-            nbaFreeAgents: nbaStateUpdates.nbaFreeAgents,
-            nbaTransactions: nbaStateUpdates.nbaTransactions,
-            nbaDraftPickAssets: nbaStateUpdates.nbaDraftPickAssets
-        });
-    }
-
-    // Finalize Teams Update
-    if (gamesSimulatedCount > 0 || isNewWeek) {
-        const teamsToUse = partialUpdate.allTeams || Array.from(updatedTeamsMap.values());
-        partialUpdate.allTeams = teamsToUse;
-        if (state.userTeam) {
-            const updatedUserTeam = (teamsToUse || []).find(team => team.name === state.userTeam?.name);
-            if (updatedUserTeam) partialUpdate.userTeam = updatedUserTeam;
-        }
-    }
-    
-    // Finalize Schedule Update (if games simulated)
-    if (gamesSimulatedCount > 0) {
-        partialUpdate.schedule = updatedSchedule;
-    }
-
-    // Mark events as processed
-    const processedIds = new Set(eventsToProcess.map(e => e.id));
-    partialUpdate.eventQueue = state.eventQueue.map(e => processedIds.has(e.id) ? { ...e, processed: true } : e);
-
-    const messagesDetails: string[] = [];
-
-    partialUpdate.currentDate = nextDate;
-    partialUpdate.week = isNewWeek ? nextWeekInfo : state.week;
-    if (nextWeekInfo > 0) {
-        partialUpdate.gameInSeason = nextWeekInfo;
-    }
-
-    // 5. NBA Simulation Logic (Preserved)
-    // Heuristic: Tuesday (0), Wed (1), Thu (2), Fri (3), Sat (4), Sun (5), Mon (6)
-    // We simulate on Saturday (4).
-    let startYear = nextDate.year;
-    const MONTH_ORDER_CHECK = ['OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP'];
-    if (MONTH_ORDER_CHECK.indexOf(nextDate.month) < MONTH_ORDER_CHECK.indexOf('OCT')) {
-         startYear = nextDate.year - 1;
-    }
-    const currentSeasonStart = { ...SEASON_START_DATE, year: startYear };
-    const dayIndex = Math.max(0, (nextDate.year * 365 + getDayOfYear(nextDate)) - (currentSeasonStart.year * 365 + getDayOfYear(currentSeasonStart)));
-    
-    const nbaUpdates = processDailyNBAGames({ ...state, ...partialUpdate }, dayIndex);
-    Object.assign(partialUpdate, nbaUpdates);
-    
-    return {
-        updatedState: partialUpdate,
-        messages: messagesDetails
-    };
+    return { updatedState: { currentDate: addDaysISO(currentDate, 1) }, messages: [] };
 };
 

@@ -1,4 +1,4 @@
-import { GameDate, Month } from '../types';
+import { GameDate, ISODate, Month } from '../types';
 
 export const MONTH_ORDER: Month[] = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -20,7 +20,56 @@ export enum SeasonPhase {
     OFFSEASON = 'OFFSEASON'
 }
 
-export const SEASON_START_DATE: GameDate = { month: 'NOV', day: 1, year: 2024 };
+// Legacy fallback; canonical season starts are computed via `buildSeasonAnchors`.
+export const SEASON_START_DATE: ISODate = '2024-11-01';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// ISO date helpers (UTC-based to avoid DST issues; treated as local-date keys).
+export const toISODate = (year: number, month1to12: number, day: number): ISODate =>
+    `${year}-${pad2(month1to12)}-${pad2(day)}`;
+
+export const isoToJsDateUTC = (iso: ISODate): Date => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+};
+
+export const jsDateToISODateUTC = (date: Date): ISODate => {
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth() + 1;
+    const d = date.getUTCDate();
+    return toISODate(y, m, d);
+};
+
+export const addDaysISO = (iso: ISODate, days: number): ISODate => {
+    const base = isoToJsDateUTC(iso);
+    base.setUTCDate(base.getUTCDate() + days);
+    return jsDateToISODateUTC(base);
+};
+
+export const compareISO = (a: ISODate, b: ISODate): number => (a < b ? -1 : a > b ? 1 : 0);
+export const isSameISO = (a: ISODate, b: ISODate): boolean => a === b;
+export const isAfterISO = (a: ISODate, b: ISODate): boolean => compareISO(a, b) > 0;
+export const isBeforeISO = (a: ISODate, b: ISODate): boolean => compareISO(a, b) < 0;
+
+export const diffInDaysISO = (toISO: ISODate, fromISO: ISODate): number => {
+    const a = isoToJsDateUTC(toISO).getTime();
+    const b = isoToJsDateUTC(fromISO).getTime();
+    return Math.round((a - b) / 86400000);
+};
+
+export const dayOfWeekISO = (iso: ISODate): number => isoToJsDateUTC(iso).getUTCDay(); // 0=Sun
+
+export const getWeekNumberFromSeasonStartISO = (dateISO: ISODate, seasonStartISO: ISODate): number => {
+    const days = diffInDaysISO(dateISO, seasonStartISO);
+    if (days < 0) return 0;
+    return Math.floor(days / 7) + 1;
+};
+
+export const formatISODate = (iso: ISODate): string => {
+    const d = isoToJsDateUTC(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+};
 
 export const compareDates = (a: GameDate, b: GameDate): number => {
     if (a.year !== b.year) return a.year - b.year;
@@ -100,6 +149,26 @@ export const diffInDays = (to: GameDate, from: GameDate): number => {
 
 export const formatDate = (date: GameDate): string => {
     return `${date.month} ${date.day}, ${date.year}`;
+};
+
+const MONTH_INDEX_BY_NAME: Record<Month, number> = MONTH_ORDER.reduce((acc, m, idx) => {
+    acc[m] = idx;
+    return acc;
+}, {} as Record<Month, number>);
+
+export const gameDateToJsDate = (date: GameDate): Date => {
+    const monthIndex = MONTH_INDEX_BY_NAME[date.month];
+    return new Date(date.year, monthIndex, date.day);
+};
+
+export const jsDateToGameDate = (date: Date): GameDate => {
+    const month = MONTH_ORDER[date.getMonth()];
+    return { year: date.getFullYear(), month, day: date.getDate() };
+};
+
+export const gameDateToISODateUTC = (date: GameDate): ISODate => {
+    const js = gameDateToJsDate(date);
+    return jsDateToISODateUTC(new Date(Date.UTC(js.getFullYear(), js.getMonth(), js.getDate())));
 };
 
 export const getSeasonPhase = (date: GameDate): SeasonPhase => {

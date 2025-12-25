@@ -1,5 +1,5 @@
-import { GameDate } from '../types';
-import { compareDates } from './dateService';
+import { ISODate } from '../types';
+import { compareISO } from './dateService';
 
 export enum EventType {
     GAME = 'GAME',
@@ -17,7 +17,7 @@ export enum EventType {
 export interface GameEvent {
     id: string;
     type: EventType;
-    date: GameDate;
+    date: ISODate;
     label: string;
     payload?: any;
     processed: boolean;
@@ -27,12 +27,12 @@ export class EventQueue {
     private events: GameEvent[];
 
     constructor(initialEvents: GameEvent[] = []) {
-        this.events = [...initialEvents].sort((a, b) => compareDates(a.date, b.date));
+        this.events = [...initialEvents].sort((a, b) => compareISO(a.date, b.date));
     }
 
     public add(event: GameEvent) {
         // Insert maintaining sort order
-        const index = this.events.findIndex(e => compareDates(e.date, event.date) > 0);
+        const index = this.events.findIndex(e => compareISO(e.date, event.date) > 0);
         if (index === -1) {
             this.events.push(event);
         } else {
@@ -41,7 +41,7 @@ export class EventQueue {
     }
 
     public addBatched(newEvents: GameEvent[]) {
-        this.events = [...this.events, ...newEvents].sort((a, b) => compareDates(a.date, b.date));
+        this.events = [...this.events, ...newEvents].sort((a, b) => compareISO(a.date, b.date));
     }
 
     public peekNext(): GameEvent | null {
@@ -52,8 +52,8 @@ export class EventQueue {
         return this.events.filter(e => !e.processed);
     }
     
-    public getEventsForDate(date: GameDate): GameEvent[] {
-        return this.events.filter(e => compareDates(e.date, date) === 0 && !e.processed);
+    public getEventsForDate(date: ISODate): GameEvent[] {
+        return this.events.filter(e => compareISO(e.date, date) === 0 && !e.processed);
     }
 
     public markProcessed(eventId: string) {
