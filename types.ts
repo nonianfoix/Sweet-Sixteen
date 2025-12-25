@@ -390,7 +390,9 @@ export type GameAction =
   | { type: 'RENOVATE_FACILITY'; payload: { facilityKey: string; cost: number } }
   | { type: 'UPDATE_BUDGET_ALLOCATION'; payload: { category: 'marketing' | 'recruiting' | 'facilities' | 'staffDevelopment'; amount: number } }
   | { type: 'REQUEST_FUNDS'; payload: { type: FundRequest['type']; amount: number; reason: string } }
-  | { type: 'ADVANCE_TO_DRAFT' };
+  | { type: 'ADVANCE_TO_DRAFT' }
+  | { type: 'SIMULATE_USER_GAME' }
+  | { type: 'CLOSE_GAME_LOG' };
 
 export type DraftProspectSource = 'NCAA' | 'International';
 export type DraftProspectCategory = 'freshman' | 'sophomore' | 'junior' | 'senior' | 'international';

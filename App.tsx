@@ -76,7 +76,7 @@ import type {
   MarketingCampaign,
   NilNegotiationStatus
 } from './types';
-import { GameStatus, ScheduledEventStatus, EventType } from './types';
+import { GameStatus, ScheduledEventStatus, EventType, GameEvent } from './types';
 import * as constants from './constants';
 import type { SponsorName } from './types';
 // FIX: Added missing function imports from gameService. This resolves multiple "has no exported member" errors.
@@ -1967,7 +1967,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SIMULATE_DAY': {
-        const { updatedState, messages, shouldSimulateGameWeek } = runDailySimulation(state);
+        const { updatedState, messages, shouldSimulateGameWeek } = runDailySimulation(state, true);
         let newState: GameState = { ...state, ...updatedState };
         const toastMessage = messages.length > 0 ? messages.join('\n') : null;
 
@@ -5310,6 +5310,7 @@ const schoolNameToSlug = (name: string): string => {
     "Alabama State": "alabama-st",
     "Alcorn State": "alcorn",
     "Arkansas-Pine Bluff": "ark-pine-bluff",
+    "Arizona State": "arizona-st",
     "Bethune-Cookman": "bethune-cookman",
     "Boston University": "boston-u",
     "Coppin State": "coppin-st",
@@ -5329,7 +5330,7 @@ const schoolNameToSlug = (name: string): string => {
     "Penn State": "penn-st",
     "South Carolina State": "south-carolina-st",
     "South Alabama": "south-ala",
-    "Southern": "southern",
+
     "Tennessee State": "tennessee-st",
     "Texas Southern": "texas-southern",
     "Appalachian State": "appalachian-st",
@@ -5384,6 +5385,7 @@ const schoolNameToSlug = (name: string): string => {
     "Southern": "southern-u",
     "Stephen F. Austin": "stephen-f-austin",
     "Texas State": "texas-st",
+    "UIC": "ill-chicago",
     "Utah State": "utah-st",
     "Washington State": "washington-st",
     "Wichita State": "wichita-st",
@@ -5554,6 +5556,19 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
              const runGameSim = () => {
                 if (!isSimulatingToGameRef.current) return;
 
+                const hasUserGameToday = !!stateRef.current.userTeam && !!(stateRef.current.eventQueue || []).some(e =>
+                    e.type === EventType.GAME &&
+                    !e.processed &&
+                    stateRef.current.currentDate &&
+                    isSameISO(e.date, stateRef.current.currentDate) &&
+                    (e.payload?.homeTeam === stateRef.current.userTeam?.name || e.payload?.awayTeam === stateRef.current.userTeam?.name)
+                );
+
+                if (hasUserGameToday) {
+                    setIsSimulatingToGame(false);
+                    return;
+                }
+
                  const prevDate = stateRef.current.currentDate;
 
                  // Stop if season over
@@ -5636,8 +5651,8 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
         return baseItems;
     }
     
-    const contactPointCap = state.coach ? (100 + (state.coach.recruiting || 0) * 10) : 100;
-    const trainingPointCap = state.coach ? (150 + (state.coach.offense || 0) * 5 + (state.coach.defense || 0) * 5) : 150;
+    const contactPointCap = state.userTeam ? getContactPoints(state.userTeam) : 100;
+    const trainingPointCap = state.userTeam ? getTrainingPoints(state.userTeam) : 150;
 
     const navItems = getNavItems(state);
 
@@ -5702,6 +5717,8 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
         );
     };
 
+    const availableTrainingPoints = trainingPointCap - (state.trainingPointsUsedThisWeek || 0);
+
     return (
         <div style={styles.navAndActionsContainer}>
             <div style={styles.navRow}>
@@ -5761,7 +5778,7 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
             {state.userTeam && (
                 <div style={{display: 'flex', justifyContent: 'space-between', gap: '20px'}}>
                     {renderResourceMeter('Contact Points', state.contactsMadeThisWeek, contactPointCap, '#4CAF50')}
-                    {renderResourceMeter('Training Points', state.trainingPointsUsedThisWeek, trainingPointCap, '#2196F3')}
+                    {renderResourceMeter('Training Points', availableTrainingPoints, trainingPointCap, '#2196F3')}
                     <div style={{...styles.resourceMeterCard, borderLeft: '4px solid #4CAF50'}}>
                         <div style={styles.resourceMeterHeader}>
                             <span>Auto Training</span>

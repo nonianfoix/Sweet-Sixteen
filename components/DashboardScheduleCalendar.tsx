@@ -174,7 +174,7 @@ export const DashboardScheduleCalendar = ({
                         : null;
 
                     const accent = colorsForCell?.primary || userTeamColors.primary;
-                    const baseBg = userGame ? hexToRgba(accent, 0.14) : surfaceBg;
+                    const baseBg = userGame ? hexToRgba(accent, 0.8) : surfaceBg;
 
                     const border = isCurrentWeek
                         ? `2px solid ${accentBorder}`
@@ -248,7 +248,13 @@ export const DashboardScheduleCalendar = ({
                                             {matchupLabel}
                                         </div>
                                         {userGame.played && typeof userGame.userScore === 'number' && typeof userGame.opponentScore === 'number' ? (
-                                            <div style={{ color: mutedInk, fontSize: 10, fontWeight: 900, lineHeight: 1 }}>
+                                            <div style={{ 
+                                                color: userGame.userScore > userGame.opponentScore ? '#16a34a' : '#dc2626', 
+                                                fontSize: 14, 
+                                                fontWeight: 900, 
+                                                lineHeight: 1,
+                                                marginTop: 4
+                                            }}>
                                                 {userGame.userScore}-{userGame.opponentScore}
                                             </div>
                                         ) : (
