@@ -11,6 +11,17 @@ interface ContractOfferModalProps {
     offerDuration?: number;
 }
 
+const formatRoundShort = (label: string | undefined): string => {
+    const normalized = (label || '').toLowerCase();
+    if (normalized.includes('national') || normalized.includes('champ')) return 'Natl Champ';
+    if (normalized.includes('final four') || normalized.includes('final')) return 'Final Four';
+    if (normalized.includes('elite 8') || normalized.includes('elite eight')) return 'E8';
+    if (normalized.includes('sweet 16') || normalized.includes('sweet sixteen')) return 'S16';
+    if (normalized.includes('round of 32') || normalized.includes('r32')) return 'R32';
+    if (normalized.includes('round of 64') || normalized.includes('r64')) return 'R64';
+    return 'N/A';
+};
+
 const ContractOfferModal: React.FC<ContractOfferModalProps> = ({ isOpen, onSign, expectations, teamName, prestige, offerSalary, offerDuration }) => {
     if (!isOpen) return null;
 
@@ -59,6 +70,9 @@ const ContractOfferModal: React.FC<ContractOfferModalProps> = ({ isOpen, onSign,
                     <p style={{ fontSize: '0.9rem', color: '#6c757d', marginBottom: '1rem' }}>
                         Your job security is calculated algorithmically across multiple categories (on-court, postseason, pipeline, brand, and finances) and compared to program expectations.
                     </p>
+                    <p style={{ fontSize: '0.75rem', color: '#6c757d', marginBottom: '1rem' }}>
+                        Wins expectations reflect the full contract total (postseason wins count toward this), while projected value remains based on regular-season performance.
+                    </p>
                     <p style={{ fontSize: '0.8rem', color: '#495057', marginBottom: '1rem' }}>
                         <strong>Board Profile:</strong> {expectations.boardProfile} • <strong>Composite:</strong> 0–100 (higher is better)
                     </p>
@@ -68,15 +82,17 @@ const ContractOfferModal: React.FC<ContractOfferModalProps> = ({ isOpen, onSign,
                             <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6c757d', marginBottom: '0.25rem' }}>
                                 WINS ({Math.round((expectations.weights?.wins || 0) * 100)}%)
                             </div>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#28a745' }}>{expectations.targetWins}+</div>
-                            <div style={{ fontSize: '0.6rem', color: '#6c757d', marginTop: '0.25rem' }}>Expected wins</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#28a745' }}>{expectations.targetWins}</div>
+                            <div style={{ fontSize: '0.6rem', color: '#6c757d', marginTop: '0.25rem' }}>Expected wins (contract total)</div>
                         </div>
                         <div style={{ padding: '0.5rem', border: '1px solid #dee2e6', borderRadius: '4px', backgroundColor: '#f8f9fa' }}>
                             <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6c757d', marginBottom: '0.25rem' }}>
                                 POSTSEASON ({Math.round((expectations.weights?.postseason || 0) * 100)}%)
                             </div>
                             <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#007bff' }}>
-                                {expectations.targetTourneyRound?.replace('Round of ', 'R').replace('National Championship', 'Natl Champ') || 'N/A'}
+                                {expectations.targetPostseasonCount
+                                    ? `${formatRoundShort(expectations.targetTourneyRound)} x${expectations.targetPostseasonCount}`
+                                    : formatRoundShort(expectations.targetTourneyRound)}
                             </div>
                             <div style={{ fontSize: '0.6rem', color: '#6c757d', marginTop: '0.25rem' }}>Expected finish</div>
                         </div>
@@ -103,7 +119,7 @@ const ContractOfferModal: React.FC<ContractOfferModalProps> = ({ isOpen, onSign,
                             <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffc107' }}>
                                 {expectations.targetNetIncome !== undefined ? `$${(expectations.targetNetIncome / 1000000).toFixed(1)}M` : 'N/A'}
                             </div>
-                            <div style={{ fontSize: '0.6rem', color: '#6c757d', marginTop: '0.25rem' }}>Net income target</div>
+                            <div style={{ fontSize: '0.6rem', color: '#6c757d', marginTop: '0.25rem' }}>Net income target (contract total)</div>
                         </div>
                     </div>
                 </div>

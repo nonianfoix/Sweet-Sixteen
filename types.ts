@@ -713,11 +713,14 @@ export interface JobSecurityMetrics {
 export interface BoardExpectations {
     targetWins: number;
     targetTourneyRound: string; // e.g., "Round of 32", "Sweet 16"
+    targetPostseasonCount?: number; // contract-mode: times to reach targetTourneyRound (or better)
     targetNetIncome: number;
     targetRevenue: number; // New field
     targetJerseySales: number; // units/season (sum)
     targetDraftPicks: number; // expected drafted players/season
     targetAttendanceFillRate: number; // 0-1
+    evaluationMode?: 'season' | 'contract'; // season-level vs contract-total targets
+    contractLength?: number; // when evaluationMode === 'contract'
     boardProfile: BoardProfile;
     weights: Record<BoardMetricKey, number>; // 0-1 weights (sum ~ 1)
     discretionaryFunds: number; // New field
@@ -884,6 +887,8 @@ export interface Coach {
 export interface CoachContract {
     teamName: string;
     yearsRemaining: number;
+    totalYears?: number; // original deal length (for contract-length CPI scaling)
+    startSeason?: number; // season when the deal was signed
     initialPrestige: number;
     expectations: BoardExpectations; // Replaces 'goal'
     progress: {

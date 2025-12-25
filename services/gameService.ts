@@ -7427,26 +7427,73 @@ export const generateBoardExpectations = (team: Team): BoardExpectations => {
     };
 };
 
+export const toContractBoardExpectations = (seasonExpectations: BoardExpectations, contractLength: number): BoardExpectations => {
+    const years = Math.max(1, Math.round(contractLength || 1));
+    const currentMode = seasonExpectations.evaluationMode ?? 'season';
+    const currentLength = Math.max(1, Math.round(seasonExpectations.contractLength || 1));
+
+    const perSeasonWins = currentMode === 'contract'
+        ? seasonExpectations.targetWins / currentLength
+        : seasonExpectations.targetWins;
+
+    const perSeasonNetIncome = currentMode === 'contract'
+        ? seasonExpectations.targetNetIncome / currentLength
+        : seasonExpectations.targetNetIncome;
+
+    return {
+        ...seasonExpectations,
+        evaluationMode: years > 1 ? 'contract' : 'season',
+        contractLength: years > 1 ? years : undefined,
+        targetPostseasonCount: (() => {
+            if (years <= 1) return undefined;
+            const idx = roundLabelToIndex(seasonExpectations.targetTourneyRound);
+            const fractionByIndex: Record<number, number> = {
+                6: 0.15,
+                5: 0.18,
+                4: 0.25,
+                3: 0.33,
+                2: 0.50,
+                1: 0.75,
+                0: 0.50,
+            };
+            const fraction = fractionByIndex[idx] ?? 0.5;
+            return clamp(Math.round(years * fraction), 1, years);
+        })(),
+        targetWins: Math.round(perSeasonWins * years),
+        targetNetIncome: Math.round(perSeasonNetIncome * years),
+    };
+};
+
 export const calculateBoardPressure = (
     team: Team,
     seasonRecord: UserSeasonRecord | null | undefined,
     draftResults: DraftPick[] | null | undefined,
     baselineExpectations: BoardExpectations | undefined,
     yearPerformance: Array<'Met' | 'Missed'>,
+    coachContract?: CoachContract | null,
 ): { boardExpectations: BoardExpectations } => {
     const baseline = baselineExpectations ?? team.boardExpectations ?? generateBoardExpectations(team);
     const weights = normalizeWeights(baseline.weights);
 
+    const contractYears = Math.max(1, Math.round(baseline.contractLength ?? coachContract?.totalYears ?? 1));
+    const contractMode = (baseline.evaluationMode ?? 'season') === 'contract' && contractYears > 1 && !!coachContract;
+    const yearsCompleted = contractMode
+        ? clamp((coachContract?.totalYears ?? contractYears) - (coachContract?.yearsRemaining ?? 0), 1, contractYears)
+        : 1;
+
     const wins = seasonRecord?.wins ?? team.record?.wins ?? 0;
-    const expectedWins = baseline.targetWins;
-    const winScore = scoreDeltaLinear(wins, expectedWins, 6);
+    const actualWins = contractMode ? (coachContract?.progress?.wins ?? wins) : wins;
+    const expectedWins = contractMode ? (baseline.targetWins / contractYears) * yearsCompleted : baseline.targetWins;
+    const winSpread = contractMode ? 6 * yearsCompleted : 6;
+    const winScore = scoreDeltaLinear(actualWins, expectedWins, winSpread);
 
     const actualRoundIndex = roundLabelToIndex(seasonRecord?.tournamentResult ?? baseline.targetTourneyRound);
     const expectedRoundIndex = roundLabelToIndex(baseline.targetTourneyRound);
     const postseasonScore = scoreDeltaLinear(actualRoundIndex, expectedRoundIndex, 22);
 
     const netIncome = (seasonRecord?.totalRevenue ?? 0) - (seasonRecord?.operationalExpenses ?? 0);
-    const financesScore = scoreRatio(netIncome, baseline.targetNetIncome, 110);
+    const expectedNetIncome = contractMode ? (baseline.targetNetIncome / contractYears) : baseline.targetNetIncome;
+    const financesScore = scoreRatio(netIncome, expectedNetIncome, 110);
 
     const attendance = seasonRecord?.gameAttendance ?? [];
     const fillSamples = attendance
@@ -7479,8 +7526,10 @@ export const calculateBoardPressure = (
             label: 'Wins vs Expectation',
             weight: weights.wins,
             score: winScore,
-            actual: wins,
+            actual: actualWins,
             expected: expectedWins,
+            displayActual: contractMode ? `${Math.round(actualWins)} (total)` : undefined,
+            displayExpected: contractMode ? `${Math.round(expectedWins)} by Year ${yearsCompleted}/${contractYears}` : undefined,
         },
         {
             key: 'postseason',
@@ -7518,7 +7567,7 @@ export const calculateBoardPressure = (
             weight: weights.finances,
             score: financesScore,
             actual: netIncome,
-            expected: baseline.targetNetIncome,
+            expected: expectedNetIncome,
         },
     ];
 
@@ -7546,7 +7595,7 @@ export const calculateBoardPressure = (
         jobSecurityStatus = 'Fired';
     }
 
-    const next = generateBoardExpectations({ ...team, boardExpectations: baseline });
+    const next = contractMode ? baseline : generateBoardExpectations({ ...team, boardExpectations: baseline });
 
     return {
         boardExpectations: {

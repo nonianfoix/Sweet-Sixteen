@@ -80,7 +80,7 @@ import { GameStatus, ScheduledEventStatus, EventType, GameEvent } from './types'
 import * as constants from './constants';
 import type { SponsorName } from './types';
 // FIX: Added missing function imports from gameService. This resolves multiple "has no exported member" errors.
-import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './services/gameService';
+import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './services/gameService';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './services/draftUtils';
 import { ensurePlayerNilProfile, buildNilNegotiationCandidates, evaluateNilOffer, calculateTeamNilBudget } from './services/nilService';
 import { generateAlumni, updateAlumniRegistry } from './services/alumniService';
@@ -917,6 +917,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         const newContract: CoachContract = {
             teamName: state.userTeam.name,
             yearsRemaining: duration,
+            totalYears: duration,
+            startSeason: state.season,
             initialPrestige: state.userTeam.prestige,
             expectations: expectations,
             progress: { wins: 0, tournamentAppearances: 0, netIncome: 0 },
@@ -927,7 +929,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ...state.coach,
             contract: newContract,
         };
-        const updatedUserTeam = { ...state.userTeam, boardExpectations: expectations }; // Ensure team has expectations
+        const updatedUserTeam = state.userTeam.boardExpectations
+            ? state.userTeam
+            : { ...state.userTeam, boardExpectations: generateBoardExpectations(state.userTeam) };
         const updatedAllTeams = state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t);
         
         // If this is the very first contract of the game, go to staff recruitment
@@ -1280,11 +1284,19 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const normalizedCoach = (() => {
             if (!loadedState.coach?.contract || !normalizedUserTeam) return loadedState.coach;
-            const expectations = generateBoardExpectations({ ...normalizedUserTeam, boardExpectations: loadedState.coach.contract.expectations });
+            const contract = loadedState.coach.contract;
+            const totalYears = contract.totalYears ?? contract.yearsRemaining ?? 1;
+            const expectations = contract.expectations?.evaluationMode === 'contract'
+                ? {
+                    ...contract.expectations,
+                    contractLength: contract.expectations.contractLength ?? totalYears,
+                }
+                : contract.expectations;
             return {
                 ...loadedState.coach,
                 contract: {
-                    ...loadedState.coach.contract,
+                    ...contract,
+                    totalYears,
                     expectations,
                 },
             };
@@ -3833,14 +3845,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         
         const recapTeam = updatedTeams.find(t => t.isUserTeam) || state.userTeam;
         const recapBaseline = state.coach?.contract?.expectations
-            ? generateBoardExpectations({ ...recapTeam, boardExpectations: state.coach.contract.expectations })
+            ? state.coach.contract.expectations
             : (recapTeam.boardExpectations || generateBoardExpectations(recapTeam));
         const recapCpiEvaluation = calculateBoardPressure(
             recapTeam,
             lastSeasonRecord,
             state.draftResults,
             recapBaseline,
-            state.coach?.contract?.yearPerformance || []
+            state.coach?.contract?.yearPerformance || [],
+            state.coach?.contract || null
         );
         const recapCpi = recapCpiEvaluation.boardExpectations.metrics
             ? {
@@ -3936,7 +3949,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
              lastSeasonRecord,
              state.draftResults,
              updatedCoach.contract?.expectations,
-             updatedCoach.contract?.yearPerformance || []
+             updatedCoach.contract?.yearPerformance || [],
+             updatedCoach.contract || null
          );
         
         const expectations = evaluation.boardExpectations!;
@@ -4636,12 +4650,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
             // 2. Update Contract
             const newTeam = state.allTeams.find(t => t.name === newTeamName);
+            const contractLength = state.pendingJobOffer.length;
+            const programExpectations = newTeam ? generateBoardExpectations(newTeam) : generateBoardExpectations(state.userTeam!);
             updatedCoach.contract = {
                 teamName: newTeamName,
                 salary: state.pendingJobOffer.salary,
-                yearsRemaining: state.pendingJobOffer.length,
+                yearsRemaining: contractLength,
+                totalYears: contractLength,
+                startSeason: nextSeason,
                 initialPrestige: state.pendingJobOffer.prestige,
-                expectations: newTeam ? generateBoardExpectations(newTeam) : generateBoardExpectations(state.userTeam!),
+                expectations: toContractBoardExpectations(programExpectations, contractLength),
                 progress: { wins: 0, tournamentAppearances: 0, netIncome: 0 },
                 yearPerformance: [],
             };
@@ -5852,7 +5870,7 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
             )}
 
             {/* Job Security Widget */}
-            {!isNBA && state.userTeam?.boardExpectations && (
+            {!isNBA && state.userTeam && state.coach?.contract?.expectations && (
                 <div style={{ marginBottom: '20px', padding: '10px', border: '1px solid #ccc', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
                     <Subheading color={colors.primary}>Job Security & Board Expectations</Subheading>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -5861,25 +5879,25 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
                             <span style={{ 
                                 fontSize: '0.8rem', 
                                 fontWeight: 'bold', 
-                                color: state.userTeam.boardExpectations.jobSecurityStatus === 'Safe' ? 'green' : 
-                                       state.userTeam.boardExpectations.jobSecurityStatus === 'Warm' ? 'orange' : 'red' 
+                                color: state.coach.contract.expectations.jobSecurityStatus === 'Safe' ? 'green' : 
+                                       state.coach.contract.expectations.jobSecurityStatus === 'Warm' ? 'orange' : 'red' 
                             }}>
-                                {state.userTeam.boardExpectations.jobSecurityStatus}
+                                {state.coach.contract.expectations.jobSecurityStatus}
                             </span>
                         </div>
                         <div style={{ fontSize: '0.7rem' }}>
-                            Composite Score: {state.userTeam.boardExpectations.metrics ? Math.round(state.userTeam.boardExpectations.metrics.compositeScore) : 100}/100
+                            Composite Score: {state.coach.contract.expectations.metrics ? Math.round(state.coach.contract.expectations.metrics.compositeScore) : 100}/100
                         </div>
                     </div>
                     
-                    {state.userTeam.boardExpectations.metrics ? (
+                    {state.coach.contract.expectations.metrics ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ fontSize: '0.65rem', color: '#555' }}>
-                                <strong>Board Profile:</strong> {state.userTeam.boardExpectations.boardProfile} •{' '}
-                                <strong>Pressure:</strong> {Math.round(state.userTeam.boardExpectations.pressure)}%
+                                <strong>Board Profile:</strong> {state.coach.contract.expectations.boardProfile} •{' '}
+                                <strong>Pressure:</strong> {Math.round(state.coach.contract.expectations.pressure)}%
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px', fontSize: '0.65rem' }}>
-                                {state.userTeam.boardExpectations.metrics.components.map(component => {
+                                {state.coach.contract.expectations.metrics.components.map(component => {
                                     const isFinances = component.key === 'finances';
                                     const formatCurrencyCompact = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact' }).format(value);
                                     const actualText = component.displayActual
@@ -5906,16 +5924,18 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
                     ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.7rem' }}>
                             <div>
-                                <strong>Wins:</strong> {state.userTeam.record.wins} / {state.userTeam.boardExpectations.targetWins}
+                                <strong>Wins:</strong> {state.coach.contract.expectations.evaluationMode === 'contract' ? state.coach.contract.progress.wins : state.userTeam.record.wins} / {state.coach.contract.expectations.targetWins}
                             </div>
                             <div>
-                                <strong>Postseason:</strong> {state.userTeam.boardExpectations.targetTourneyRound}
+                                <strong>Postseason:</strong> {state.coach.contract.expectations.targetPostseasonCount
+                                    ? `${state.coach.contract.expectations.targetTourneyRound.replace('Round of ', 'R')} x${state.coach.contract.expectations.targetPostseasonCount}`
+                                    : state.coach.contract.expectations.targetTourneyRound}
                             </div>
                             <div>
-                                <strong>Draft Picks:</strong> {state.userTeam.boardExpectations.targetDraftPicks} / yr
+                                <strong>Draft Picks:</strong> {state.coach.contract.expectations.targetDraftPicks} / yr
                             </div>
                             <div>
-                                <strong>Attendance:</strong> {Math.round(state.userTeam.boardExpectations.targetAttendanceFillRate * 100)}% fill target
+                                <strong>Attendance:</strong> {Math.round(state.coach.contract.expectations.targetAttendanceFillRate * 100)}% fill target
                             </div>
                         </div>
                     )}
@@ -10505,10 +10525,12 @@ const CoachModal = ({ state, dispatch, onClose }: { state: GameState, dispatch: 
                                 <strong>Pressure:</strong> {Math.round(expectations.pressure)}%
                             </div>
                             <div>
-                                <strong>Wins:</strong> {expectations.targetWins}
+                                <strong>Wins:</strong> {expectations.evaluationMode === 'contract' ? `${coach.contract.progress.wins} / ${expectations.targetWins}` : expectations.targetWins}
                             </div>
                             <div>
-                                <strong>Postseason:</strong> {expectations.targetTourneyRound}
+                                <strong>Postseason:</strong> {expectations.targetPostseasonCount
+                                    ? `${expectations.targetTourneyRound.replace('Round of ', 'R')} x${expectations.targetPostseasonCount}`
+                                    : expectations.targetTourneyRound}
                             </div>
                             <div>
                                 <strong>Net Income:</strong> {formatCurrency(expectations.targetNetIncome)}
@@ -11938,15 +11960,17 @@ export default function App() {
       return <GameOverModal reason={state.gameOverReason} dispatch={dispatch} />;
   }
   if(state.status === GameStatus.CONTRACT_NEGOTIATION && state.userTeam) {
-      const expectations = state.userTeam.boardExpectations || generateBoardExpectations(state.userTeam);
+      const programExpectations = state.userTeam.boardExpectations || generateBoardExpectations(state.userTeam);
+      const duration = state.pendingJobOffer?.length ?? 4;
+      const contractExpectations = toContractBoardExpectations(programExpectations, duration);
       return <ContractOfferModal 
           isOpen={true}
           teamName={state.userTeam.name}
           prestige={state.userTeam.prestige}
-          expectations={expectations}
+          expectations={contractExpectations}
           offerSalary={state.pendingJobOffer?.salary}
-          offerDuration={state.pendingJobOffer?.length}
-          onSign={(salary, duration) => dispatch({ type: 'SIGN_CONTRACT', payload: { expectations, salary, duration } })}
+          offerDuration={duration}
+          onSign={(salary, duration) => dispatch({ type: 'SIGN_CONTRACT', payload: { expectations: toContractBoardExpectations(programExpectations, duration), salary, duration } })}
       />
   }
   if (state.status === GameStatus.SKILL_TREE) {
