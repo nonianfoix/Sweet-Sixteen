@@ -7850,6 +7850,23 @@ export const runSimulationForWeek = (
             });
         }
 
+        // Promotional event costs post on the game day (when the date passes), then the event is marked resolved.
+        const scheduledPromo = homeTeam.eventCalendar?.find(e => e.week === week && e.status === 'pending');
+        if (scheduledPromo) {
+            const promoEntry = (playbook || []).find(p => p.id === scheduledPromo.playbookId);
+            if (promoEntry?.cost) {
+                recordFinancialTransaction(homeTeam, state.season, week, {
+                    description: `Promotion: ${promoEntry.label} vs ${awayTeam.name}`,
+                    category: 'Expense',
+                    amount: -Math.abs(promoEntry.cost),
+                    expenseKey: 'marketingExpenses',
+                });
+            }
+            homeTeam.eventCalendar = (homeTeam.eventCalendar || []).map(e =>
+                e.id === scheduledPromo.id ? { ...e, status: 'resolved' as const } : e
+            );
+        }
+
         // Travel costs only for the away team.
         const projectedTravel = awayTeam.initialProjectedRevenue?.travelExpenses ?? calculateTeamRevenue(awayTeam, null).travelExpenses;
         const awayGames = 16;
@@ -8450,8 +8467,34 @@ export const toggleDynamicPricing = (team: Team, zoneId: string, rule: any): Tea
     return { ...team, ticketZones: nextZones };
 };
 export const setTravelSettings = (team: Team, method: any, accommodation: any): Team => team;
-export const scheduleEvent = (team: Team, week: number, eventEntry: any, opponent: any): Team => team;
-export const cancelEvent = (team: Team, eventId: string): Team => team;
+export const scheduleEvent = (team: Team, week: number, eventEntry: EventPlaybookEntry, opponent: string): Team => {
+    const calendar = [...(team.eventCalendar || [])];
+    const existingIndex = calendar.findIndex(e => e.week === week && e.status !== 'cancelled');
+
+    const next = {
+        id: existingIndex >= 0 ? calendar[existingIndex]!.id : crypto.randomUUID(),
+        playbookId: eventEntry.id,
+        week,
+        opponent,
+        status: 'pending' as const,
+    };
+
+    if (existingIndex >= 0) {
+        calendar[existingIndex] = next;
+    } else {
+        calendar.push(next);
+    }
+
+    return { ...team, eventCalendar: calendar };
+};
+
+export const cancelEvent = (team: Team, eventId: string): Team => {
+    const calendar = team.eventCalendar || [];
+    if (!calendar.length) return team;
+
+    const nextCalendar = calendar.map(e => (e.id === eventId ? { ...e, status: 'cancelled' as const } : e));
+    return { ...team, eventCalendar: nextCalendar };
+};
 
 const hashToUnit = (value: string): number => {
     let hash = 2166136261;

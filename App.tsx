@@ -5511,6 +5511,7 @@ const schoolNameToSlug = (name: string): string => {
     "Saint Mary's": "st-marys-ca",
     "NC State": "north-carolina-st",
     "South Florida": "south-fla",
+    "Detroit Mercy": "detroit",
     "Maryland Eastern Shore": "umes.png",
   };
 
