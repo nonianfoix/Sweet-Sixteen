@@ -1,9 +1,10 @@
 // App.scenario.test.ts
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { gameReducer } from '../App';
-import { GameState, Team, GameAction, GameAttendanceRecord, GameStatus, NilNegotiationCandidate, ArenaFacility } from '../types';
+import { GameState, Team, GameAction, GameAttendanceRecord, GameStatus, NilNegotiationCandidate, ArenaFacility, GameResult, Recruit } from '../types';
 import { mockTeam } from '../EconomyHub.test';
 import { resolveZoneTicketPrice } from '../services/gameService';
+import { createRecruit, processRecruitingWeek } from '../services/gameService';
 
 const scenarioNilCandidate: NilNegotiationCandidate = {
     playerId: mockTeam.roster[0].id,
@@ -225,6 +226,99 @@ describe('App.tsx gameReducer scenario tests', () => {
         expect(newState.allTeams.find(t => t.isUserTeam)?.finances.totalRevenue).toBe(5000000);
         expect(newState.economyTelemetry.eventFeed.length).toBe(1);
         expect(newState.economyTelemetry.eventFeed[0].id).toBe('loaded');
+    });
+
+    it('should resolve a package-deal pair with overlapping elite offers', () => {
+        const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.05);
+
+        const duke = { ...deepCopy(mockTeam), name: 'Duke', prestige: 95, recruitingPrestige: 95, isUserTeam: true, state: 'NC', conference: 'ACC' };
+        const mid = { ...deepCopy(mockTeam), name: 'Midtown U', prestige: 68, recruitingPrestige: 68, isUserTeam: false, state: 'TX', conference: 'AAC' };
+        const teams = [duke, mid];
+
+        const recruitA = {
+            ...createRecruit(),
+            id: 'recruit-a',
+            name: 'Jordan Ellis',
+            stars: 5,
+            overall: 90,
+            potential: 96,
+            position: 'SG',
+            interest: 72,
+            cpuOffers: ['Duke', 'Midtown U'],
+            userHasOffered: false,
+            declinedOffers: [],
+            motivations: {
+                proximity: 35,
+                playingTime: 25,
+                nil: 85,
+                exposure: 90,
+                relationship: 88,
+                development: 65,
+                academics: 50,
+            },
+            relationships: [{
+                type: 'Sibling',
+                personId: 'recruit-b',
+                displayName: 'Jalen Ellis',
+                sportLevel: 'HS',
+                notes: 'Package deal',
+            }],
+            softCommitment: false,
+            verbalCommitment: null,
+            visitStatus: 'None',
+            dealbreaker: 'None',
+        } as Recruit;
+
+        const recruitB = {
+            ...createRecruit(),
+            id: 'recruit-b',
+            name: 'Jalen Ellis',
+            stars: 4,
+            overall: 84,
+            potential: 92,
+            position: 'SG',
+            interest: 70,
+            cpuOffers: ['Duke', 'Midtown U'],
+            userHasOffered: false,
+            declinedOffers: [],
+            motivations: {
+                proximity: 40,
+                playingTime: 35,
+                nil: 78,
+                exposure: 82,
+                relationship: 85,
+                development: 60,
+                academics: 55,
+            },
+            relationships: [{
+                type: 'Sibling',
+                personId: 'recruit-a',
+                displayName: 'Jordan Ellis',
+                sportLevel: 'HS',
+                notes: 'Package deal',
+            }],
+            softCommitment: false,
+            verbalCommitment: null,
+            visitStatus: 'None',
+            dealbreaker: 'None',
+        } as Recruit;
+
+        let recruits = [recruitA, recruitB];
+        const schedule: GameResult[][] = Array.from({ length: 12 }, () => []);
+
+        for (let week = 1; week <= 8; week += 1) {
+            const result = processRecruitingWeek(teams, recruits, duke.name, week, schedule, false, 0, 0);
+            recruits = result.updatedRecruits;
+        }
+
+        const updatedA = recruits.find(r => r.id === 'recruit-a');
+        const updatedB = recruits.find(r => r.id === 'recruit-b');
+
+        expect(updatedA?.verbalCommitment).toBeTruthy();
+        expect(updatedA?.verbalCommitment).toBe(updatedB?.verbalCommitment);
+        expect(updatedA?.verbalCommitment).toBe('Duke');
+
+        randomSpy.mockRestore();
     });
 
     it('should update NIL budget and usage on MAKE_NIL_OFFER action', () => {

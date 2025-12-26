@@ -345,6 +345,7 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   commitWeek?: number;
   signWeek?: number;
   lastRecruitingNews?: string;
+  packageDealActive?: boolean;
   relationships?: RelationshipLink[];
   familyLastNameGroupId?: string;
   softCommitment: boolean;
