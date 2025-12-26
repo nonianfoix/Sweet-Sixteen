@@ -1,6 +1,6 @@
 import React from 'react';
 import { GameState, Team, GameAction, TeamColors, EventPlaybookEntry } from './types';
-import { getGameDateString } from './services/calendarService';
+import { getGameDateStringFromEventQueue } from './services/calendarService';
 
 interface EventsTabProps {
     state: GameState;
@@ -122,7 +122,7 @@ const EventsTab: React.FC<EventsTabProps> = ({ state, userTeam, dispatch, colors
                     return (
                         <div key={week} style={styles.eventCard}>
                             <div style={styles.gameInfo}>
-                                <div style={{fontWeight: 'bold', fontSize: '0.8rem'}}>{getGameDateString(state.season + 2024, week)}</div>
+                                <div style={{fontWeight: 'bold', fontSize: '0.8rem'}}>{getGameDateStringFromEventQueue(state.eventQueue, state.season + 2024, week)}</div>
                                 <div style={{fontSize: '0.7rem', color: '#666'}}>vs {game.awayTeam}</div>
                                 {opponent && <div style={{fontSize: '0.6rem', color: '#888'}}>Rk {opponent.prestige}</div>}
                             </div>
@@ -151,7 +151,7 @@ const EventsTab: React.FC<EventsTabProps> = ({ state, userTeam, dispatch, colors
                                                 handleScheduleEvent(week, e.target.value, game.awayTeam);
                                             }
                                         }}
-                                        value=""
+                                        defaultValue=""
                                     >
                                         <option value="">Select Promotion...</option>
                                         {playbook.map(p => (

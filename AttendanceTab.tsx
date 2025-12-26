@@ -17,7 +17,7 @@ import {
 } from './types';
 import { calculateAttendance, getZonePriceBounds, resolveZoneTicketPrice } from './services/gameService';
 import { logTelemetryEvent } from './services/telemetryService';
-import { getGameDateString } from './services/calendarService';
+import { getGameDateStringFromEventQueue } from './services/calendarService';
 
 const SEAT_SEGMENT_ORDER: SeatSegmentKey[] = ['lowerBowl', 'studentSection', 'upperBowl', 'suites'];
 const ARCHETYPE_LABELS: Record<FanArchetype, string> = {
@@ -461,7 +461,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
                         return (
                             <div key={week} style={styles.zoneCard}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                    <strong>{getGameDateString(state.season + 2024, week)} vs {game.awayTeam}</strong>
+                                     <strong>{getGameDateStringFromEventQueue(state.eventQueue, state.season + 2024, week)} vs {game.awayTeam}</strong>
                                     {opponent && <span style={{ fontSize: '0.7rem', color: '#666' }}>Rk {opponent.prestige}</span>}
                                 </div>
                                 
@@ -501,7 +501,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
                                                     });
                                                 }
                                             }}
-                                            value=""
+                                            defaultValue=""
                                         >
                                             <option value="">Select Promotion...</option>
                                             {state.eventPlaybookCatalog.map(event => (

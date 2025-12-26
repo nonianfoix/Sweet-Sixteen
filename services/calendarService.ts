@@ -1,4 +1,5 @@
-import { GameResult } from '../types';
+import { GameEvent, ISODate } from '../types';
+import { isoToJsDateUTC } from './dateService';
 
 export const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -37,4 +38,30 @@ export const formatGameDate = (date: Date): string => {
 
 export const getGameDateString = (seasonYear: number, week: number): string => {
     return formatGameDate(getGameDate(seasonYear, week));
+};
+
+const getGameISODateFromEventQueue = (eventQueue: GameEvent[] | undefined, week: number): ISODate | null => {
+    if (!eventQueue?.length) return null;
+    for (const event of eventQueue) {
+        if (event.type !== 'GAME') continue;
+        const eventWeek = Number(event.payload?.week);
+        if (!Number.isFinite(eventWeek) || eventWeek !== week) continue;
+        return event.date;
+    }
+    return null;
+};
+
+export const formatShortISODate = (iso: ISODate): string => {
+    const d = isoToJsDateUTC(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+};
+
+export const getGameDateStringFromEventQueue = (
+    eventQueue: GameEvent[] | undefined,
+    seasonYear: number,
+    week: number
+): string => {
+    const iso = getGameISODateFromEventQueue(eventQueue, week);
+    if (iso) return formatShortISODate(iso);
+    return getGameDateString(seasonYear, week);
 };

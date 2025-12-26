@@ -88,7 +88,7 @@ import { ensurePlayerNilProfile, buildNilNegotiationCandidates, evaluateNilOffer
 import { generateAlumni, updateAlumniRegistry } from './services/alumniService';
 import { NBA_SALARIES } from './data/nbaSalaries';
 import { NBA_DRAFT_PICK_RULES } from './data/nbaDraftPickSwaps';
-import { getGameDateString } from './services/calendarService';
+import { getGameDateString, getGameDateStringFromEventQueue } from './services/calendarService';
 import { SEASON_START_DATE, isSameISO, addDaysISO, jsDateToISODateUTC, formatISODate, gameDateToISODateUTC } from './services/dateService';
 
 const { SCHOOLS, SCHOOL_PRESTIGE_RANGES, SCHOOL_ENDOWMENT_OVERRIDES, SCHOOL_SPONSORS, INITIAL_SPONSORS, SPONSOR_SLOGANS, ARENA_CAPACITIES, FIRST_NAMES, FEMALE_FIRST_NAMES, LAST_NAMES, NBA_TEAMS, INTERNATIONAL_PROGRAMS, SPONSORS, ACTIVE_NBA_PLAYERS_DATA, US_STATES, SCHOOL_STATES, COACH_SKILL_TREE, RECRUITING_COSTS, SCHOOL_COLORS, SCHOOL_CONFERENCES, ALL_TIME_NBA_ALUMNI_COUNTS, NBA_ACRONYM_TO_NAME, BASE_CALENDAR_YEAR } = constants;
@@ -5997,7 +5997,7 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
                                     Schedule Promotion
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#444' }}>
-                                    {getGameDateString(state.season + 2024, promoScheduling.week)} vs {promoScheduling.opponent}
+                                    {getGameDateStringFromEventQueue(state.eventQueue, state.season + 2024, promoScheduling.week)} vs {promoScheduling.opponent}
                                 </div>
                             </div>
                             <button
