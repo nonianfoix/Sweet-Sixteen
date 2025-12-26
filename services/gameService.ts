@@ -59,6 +59,9 @@ import { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } fr
 export { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './seasonScheduleService';
 import collegeSrsCsv from '../data/College SRS.csv?raw';
 
+// Dev note: Updated services/gameService.ts (calculateRecruitInterestScore, processRecruitingWeek, package-deal helpers),
+// types.ts (Recruit.packageDealActive), and src/App.scenario.test.ts (package-deal scenario test).
+
 export const randomBetween = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 export const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -3210,6 +3213,35 @@ const isPackageDealLink = (link: RelationshipLink): boolean => {
     return link.sportLevel === 'HS' && !!link.notes && link.notes.toLowerCase().includes('package deal');
 };
 
+const RECRUITING_DEBUG_PACKAGES = false;
+
+const getDecisionPressure = (week: number, isSigningPeriod: boolean): number => {
+    if (isSigningPeriod) return 1;
+    return clamp((week - 5) / 10, 0, 1);
+};
+
+const getRecruitTalentScore = (recruit: Recruit): number => {
+    const starScore = clamp(((recruit.stars ?? 1) - 1) / 4, 0, 1);
+    const rankScore = typeof recruit.nationalRank === 'number'
+        ? clamp(1 - (recruit.nationalRank - 1) / 200, 0, 1)
+        : starScore;
+    const overallScore = clamp(((recruit.overall ?? 60) - 60) / 30, 0, 1);
+    return clamp(starScore * 0.5 + rankScore * 0.3 + overallScore * 0.2, 0, 1);
+};
+
+const getRosterCongestionForRecruit = (team: Team, recruit: Recruit): number => {
+    const depthPlayers = team.roster.filter(p =>
+        p.position === recruit.position ||
+        (recruit.secondaryPosition && p.position === recruit.secondaryPosition) ||
+        p.secondaryPosition === recruit.position
+    );
+    if (!depthPlayers.length) return 0;
+    const depthFactor = clamp((depthPlayers.length - 1) / 4, 0, 1);
+    const topOverall = depthPlayers.reduce((max, p) => Math.max(max, p.overall ?? 50), 50);
+    const qualityFactor = clamp((topOverall - 70) / 20, 0, 1);
+    return clamp(depthFactor * 0.6 + qualityFactor * 0.4, 0, 1);
+};
+
 export const applyPackageDealOfferMirroring = (recruits: Recruit[], teams: Team[], userTeamName: string, week: number): Recruit[] => {
     const updatedRecruits = JSON.parse(JSON.stringify(recruits)) as Recruit[];
     const teamsByName = new Map(teams.map(t => [t.name, t]));
@@ -4826,6 +4858,14 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	    const awarenessFactor = (awarenessScore - 50) * (0.12 + exposureWeight * 0.35) * (0.95 + strictness * 0.2);
 	
 	    let prestigeFactor = (team.recruitingPrestige - 50) * (0.25 + exposureWeight * 0.45);
+        const marketScore = getTeamMarketScore(team);
+        const prestigeNormalized = clamp((team.recruitingPrestige ?? team.prestige ?? 50) / 100, 0, 1);
+        const exposureCurve = clamp(1 / (1 + Math.exp(-10 * (prestigeNormalized - 0.6))), 0, 1);
+        const exposureSensitivity = clamp(0.55 + exposureWeight * 0.7 + (recruit.stars >= 4 ? 0.15 : 0), 0.45, 1.4);
+        const nilSensitivity = clamp(0.55 + nilWeight * 0.8 + (recruit.stars >= 4 ? 0.1 : 0), 0.45, 1.4);
+        const exposureBonus = (exposureCurve - 0.5) * 22 * exposureSensitivity;
+        const expectedNilIndex = clamp(exposureCurve * 0.75 + (marketScore / 100) * 0.25, 0, 1);
+        const expectedNilBonus = (expectedNilIndex - 0.4) * 18 * nilSensitivity;
     
     // Pipeline Bonus
     if (team.pipelines) {
@@ -4850,12 +4890,14 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 
 	    const needs = calculateTeamNeeds(team);
 	    const positionNeedFactor = needs.includes(recruit.position) || (recruit.secondaryPosition && needs.includes(recruit.secondaryPosition)) ? 5 : 0;
-    const playingTimeFactorRaw = (99 - (team.roster.find(p => p.position === recruit.position)?.overall || 50)) * 0.1;
         const playingTimeStyleMultiplier =
             commitmentStyle === 'FrontRunner' ? 0.90 :
             commitmentStyle === 'Underdog' ? 1.15 :
             1.0;
-    const playingTimeFactor = playingTimeFactorRaw * (0.4 + playingTimeWeight * 0.9) * playingTimeStyleMultiplier;
+        const rosterCongestion = getRosterCongestionForRecruit(team, recruit);
+        const talentScore = getRecruitTalentScore(recruit);
+        const playingTimeConcern = clamp(0.9 - talentScore * 0.65, 0.2, 0.9);
+        const playingTimePenalty = (6 + playingTimeWeight * 8) * playingTimeConcern * rosterCongestion * playingTimeStyleMultiplier;
     const inSeasonBonus = context.gameInSeason <= 31 ? context.gameInSeason * 0.1 : 0;
 	    const wealthBonus = getWealthRecruitingBonus(team) * (0.4 + nilWeight * 1.6);
 	    const alumniNilBonus = (team.wealth?.alumniNetwork?.strength ?? 0) * 0.08 * nilWeight;
@@ -4873,7 +4915,6 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	    const signingBonus = context.isSigningPeriod ? 5 : 0;
 
 	    const academicScore = getTeamAcademicScore(team);
-	    const marketScore = getTeamMarketScore(team);
 	    const communityScore = getTeamCommunityScore(team);
     const attributeScores = [
         attributeAlignment(academicScore, recruit.preferredProgramAttributes.academics) * (0.5 + academicsWeight * 0.9),
@@ -4918,7 +4959,7 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
         dealbreakerPenalty = 50; // Effectively kills interest
     } else if (recruit.dealbreaker === 'Academics' && academicScore < 60) {
         dealbreakerPenalty = 30;
-    } else if (recruit.dealbreaker === 'PlayingTime' && playingTimeFactor < 0) {
+    } else if (recruit.dealbreaker === 'PlayingTime' && rosterCongestion > 0.6 && playingTimeConcern > 0.5) {
         dealbreakerPenalty = 25;
     } else if (recruit.dealbreaker === 'NIL' && wealthBonus < 0) {
         dealbreakerPenalty = 25;
@@ -4930,9 +4971,11 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	        baseInterest +
 	        awarenessFactor +
 	        prestigeFactor +
+            exposureBonus +
+            expectedNilBonus +
 	        recordFactor +
 	        positionNeedFactor +
-	        playingTimeFactor +
+	        -playingTimePenalty +
 	        inSeasonBonus +
 	        wealthBonus +
 	        alumniNilBonus +
@@ -5266,6 +5309,31 @@ export const calculateVisitOutcome = (recruit: Recruit, team: Team, gameResult: 
     return Math.round(boost * coachabilityMultiplier);
 };
 
+const getPackageRelationshipMultiplier = (linkType: RelationshipType): number => {
+    switch (linkType) {
+        case 'Twin':
+            return 1.0;
+        case 'Sibling':
+            return 0.7;
+        case 'Cousin':
+            return 0.35;
+        default:
+            return 0.5;
+    }
+};
+
+const getPackageBaseDisposition = (recruit: Recruit): number => {
+    const relationshipWeight = clamp((recruit.motivations?.relationship ?? 50) / 100, 0, 1);
+    const baseRandom = stableIntBetween(`${recruit.id}:pkgDisp`, -10, 10) / 100;
+    return clamp(0.35 + relationshipWeight * 0.35 + baseRandom, 0.15, 0.9);
+};
+
+const getPackageIndependencePenalty = (recruit: Recruit): number => {
+    const talentScore = getRecruitTalentScore(recruit);
+    const archetypePenalty = recruit.archetype === 'Mercenary' || recruit.archetype === 'FameSeeker' ? 0.12 : 0;
+    return clamp(talentScore * 0.45 + archetypePenalty, 0, 0.65);
+};
+
 
 export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTeamName: string, week: number, schedule: GameResult[][], isSigningPeriod: boolean = false, contactsMadeThisWeek: number = 0, contactPoints?: number, userCoachSkills?: string[]): { updatedRecruits: Recruit[], updatedContactsMadeThisWeek: number } => {
     let currentContactsMade = contactsMadeThisWeek;
@@ -5273,6 +5341,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
     const teamsByName = new Map(teams.map(t => [t.name, t]));
     const userTeam = teams.find(t => t.isUserTeam);
     const recruitsByIdIndex = new Map(updatedRecruits.map((r: Recruit) => [r.id, r]));
+    const decisionPressure = getDecisionPressure(week, isSigningPeriod);
 
 	    // Apply Weekly Interest Volatility
 	    updatedRecruits.forEach((r: Recruit) => {
@@ -5560,31 +5629,186 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 	                    if (!r.teamMomentum) r.teamMomentum = {};
 	                    r.teamMomentum[userTeamName] = clamp((r.teamMomentum[userTeamName] ?? 0) + 4, -20, 20);
 	                }
-	            }
-	        }
-	    }
+            }
+        }
+    }
 
-	    updatedRecruits.forEach((r: Recruit) => {
-	        const wasCommitted = Boolean(r.verbalCommitment);
-	        const committedSchool = r.verbalCommitment;
-
+    const getRecruitOfferDetails = (r: Recruit) => {
+        const committedSchool = r.verbalCommitment;
         const allOffers = [...r.cpuOffers, ...(r.userHasOffered ? [userTeamName] : [])]
             .filter(offer => !r.declinedOffers.includes(offer));
         if (committedSchool && !allOffers.includes(committedSchool) && !r.declinedOffers.includes(committedSchool)) {
             allOffers.push(committedSchool);
         }
-        if (allOffers.length === 0) return;
-
-        const offerDetails = allOffers.map(teamName => ({
-            name: teamName,
-            score: calculateRecruitInterestScore(
-                r,
-                teamsByName.get(teamName)!,
-                { gameInSeason: week, isSigningPeriod },
-                teamName === userTeamName ? userCoachSkills : undefined
-            )
-        }));
+        const offerDetails = allOffers
+            .map(teamName => {
+                const team = teamsByName.get(teamName);
+                if (!team) return null;
+                return {
+                    name: teamName,
+                    score: calculateRecruitInterestScore(
+                        r,
+                        team,
+                        { gameInSeason: week, isSigningPeriod },
+                        teamName === userTeamName ? userCoachSkills : undefined
+                    ),
+                };
+            })
+            .filter(Boolean) as { name: string; score: number }[];
         offerDetails.sort((a, b) => b.score - a.score);
+        return { allOffers, offerDetails };
+    };
+
+    const packageResolvedIds = new Set<string>();
+    const processedPackagePairs = new Set<string>();
+
+    updatedRecruits.forEach((r: Recruit) => {
+        if (!r.relationships || !r.relationships.length) return;
+        r.relationships.forEach(link => {
+            if (!isPackageDealLink(link)) return;
+            if (link.personId === r.id) return;
+            const other = recruitsByIdIndex.get(link.personId);
+            if (!other) return;
+
+            const pairKey = [r.id, other.id].sort().join('|');
+            if (processedPackagePairs.has(pairKey)) return;
+            processedPackagePairs.add(pairKey);
+
+            const linkType = link.type;
+            const relationshipMultiplier = getPackageRelationshipMultiplier(linkType);
+            const baseDisposition = (getPackageBaseDisposition(r) + getPackageBaseDisposition(other)) / 2;
+            const independencePenalty = (getPackageIndependencePenalty(r) + getPackageIndependencePenalty(other)) / 2;
+            const packageStrength = clamp(relationshipMultiplier * baseDisposition - independencePenalty, 0, 1);
+
+            const offerDataA = getRecruitOfferDetails(r);
+            const offerDataB = getRecruitOfferDetails(other);
+            const bestSoloScoreA = offerDataA.offerDetails[0]?.score ?? 0;
+            const bestSoloScoreB = offerDataB.offerDetails[0]?.score ?? 0;
+
+            const offerSetA = new Set(offerDataA.allOffers);
+            const offerSetB = new Set(offerDataB.allOffers);
+            const candidateSchools = new Set<string>([...offerSetA, ...offerSetB]);
+
+            let bestJointSchool: { name: string; jointScore: number; soloScoreA: number; soloScoreB: number } | null = null;
+            const softThreshold = 58 - decisionPressure * 8;
+
+            candidateSchools.forEach(teamName => {
+                if (r.declinedOffers.includes(teamName) || other.declinedOffers.includes(teamName)) return;
+                const team = teamsByName.get(teamName);
+                if (!team) return;
+                const hasOfferA = offerSetA.has(teamName);
+                const hasOfferB = offerSetB.has(teamName);
+                if (!hasOfferA && !hasOfferB) return;
+
+                const soloScoreA = calculateRecruitInterestScore(
+                    r,
+                    team,
+                    { gameInSeason: week, isSigningPeriod },
+                    teamName === userTeamName ? userCoachSkills : undefined
+                );
+                const soloScoreB = calculateRecruitInterestScore(
+                    other,
+                    team,
+                    { gameInSeason: week, isSigningPeriod },
+                    teamName === userTeamName ? userCoachSkills : undefined
+                );
+
+                const hardEligible = hasOfferA && hasOfferB;
+                const softEligible = (hasOfferA && soloScoreB >= softThreshold) || (hasOfferB && soloScoreA >= softThreshold);
+                if (!hardEligible && !softEligible) return;
+
+                const prestigeNormalized = clamp((team.recruitingPrestige ?? team.prestige ?? 50) / 100, 0, 1);
+                const prestigeHalo = Math.pow(prestigeNormalized, 2.2) * 4;
+                const imbalancePenalty = Math.max(0, Math.abs(soloScoreA - soloScoreB) - 6) * 0.45;
+                const synergyBonus = packageStrength * (6 + decisionPressure * 4);
+                const jointScore = soloScoreA + soloScoreB + synergyBonus + prestigeHalo - imbalancePenalty;
+
+                if (!bestJointSchool || jointScore > bestJointSchool.jointScore) {
+                    bestJointSchool = { name: teamName, jointScore, soloScoreA, soloScoreB };
+                }
+            });
+
+            let packageActive = packageStrength >= 0.15 && !!bestJointSchool;
+            if (bestJointSchool) {
+                const gapThreshold = packageStrength * 12 + 6;
+                const soloGapA = bestSoloScoreA - bestJointSchool.soloScoreA;
+                const soloGapB = bestSoloScoreB - bestJointSchool.soloScoreB;
+                if (soloGapA > gapThreshold || soloGapB > gapThreshold) {
+                    packageActive = false;
+                }
+                if (RECRUITING_DEBUG_PACKAGES) {
+                    const prevActive = r.packageDealActive ?? other.packageDealActive ?? false;
+                    if (prevActive !== packageActive) {
+                        console.log(`[pkg] ${r.name}+${other.name} active=${packageActive} strength=${packageStrength.toFixed(2)} soloGapA=${soloGapA.toFixed(1)} soloGapB=${soloGapB.toFixed(1)} bestJoint=${bestJointSchool.name}`);
+                    } else {
+                        console.log(`[pkg] ${r.name}+${other.name} active=${packageActive} strength=${packageStrength.toFixed(2)} bestSoloA=${bestSoloScoreA.toFixed(1)} bestSoloB=${bestSoloScoreB.toFixed(1)} bestJoint=${bestJointSchool.name}`);
+                    }
+                }
+            } else if (RECRUITING_DEBUG_PACKAGES) {
+                console.log(`[pkg] ${r.name}+${other.name} active=false strength=${packageStrength.toFixed(2)} reason=NoEligibleJointSchool`);
+            }
+
+            r.packageDealActive = packageActive;
+            other.packageDealActive = packageActive;
+
+            if (!packageActive) return;
+            if (r.verbalCommitment || other.verbalCommitment) return;
+            if (packageResolvedIds.has(r.id) || packageResolvedIds.has(other.id)) return;
+            if (!bestJointSchool) return;
+
+            const jointCommitThreshold = (135 - decisionPressure * 12) - (isSigningPeriod ? 8 : 0);
+            const individualMinAcceptable = clamp(58 - decisionPressure * 6 - (isSigningPeriod ? 4 : 0), 45, 65);
+
+            if (RECRUITING_DEBUG_PACKAGES) {
+                console.log(`[pkg] ${r.name}+${other.name} jointScore=${bestJointSchool.jointScore.toFixed(1)} threshold=${jointCommitThreshold.toFixed(1)} minAccept=${individualMinAcceptable.toFixed(1)} @ ${bestJointSchool.name}`);
+            }
+
+            if (
+                bestJointSchool.jointScore >= jointCommitThreshold &&
+                bestJointSchool.soloScoreA >= individualMinAcceptable &&
+                bestJointSchool.soloScoreB >= individualMinAcceptable
+            ) {
+                r.verbalCommitment = bestJointSchool.name;
+                other.verbalCommitment = bestJointSchool.name;
+                r.isTargeted = false;
+                other.isTargeted = false;
+                r.commitWeek = r.commitWeek ?? week;
+                other.commitWeek = other.commitWeek ?? week;
+                r.softCommitment = !isSigningPeriod && week <= 8;
+                other.softCommitment = r.softCommitment;
+
+                if (isSigningPeriod) {
+                    r.recruitmentStage = 'Signed';
+                    other.recruitmentStage = 'Signed';
+                    r.signWeek = r.signWeek ?? week;
+                    other.signWeek = other.signWeek ?? week;
+                    r.lastRecruitingNews = `${r.name} signed with ${bestJointSchool.name} as part of a package deal with ${other.name}.`;
+                    other.lastRecruitingNews = `${other.name} signed with ${bestJointSchool.name} as part of a package deal with ${r.name}.`;
+                } else {
+                    r.recruitmentStage = r.softCommitment ? 'SoftCommit' : 'HardCommit';
+                    other.recruitmentStage = other.softCommitment ? 'SoftCommit' : 'HardCommit';
+                    r.lastRecruitingNews = `${r.name} committed to ${bestJointSchool.name} as part of a package deal with ${other.name}.`;
+                    other.lastRecruitingNews = `${other.name} committed to ${bestJointSchool.name} as part of a package deal with ${r.name}.`;
+                }
+
+                if (bestJointSchool.name === userTeamName) {
+                    r.userHasOffered = false;
+                    other.userHasOffered = false;
+                }
+
+                packageResolvedIds.add(r.id);
+                packageResolvedIds.add(other.id);
+            }
+        });
+    });
+
+	    updatedRecruits.forEach((r: Recruit) => {
+	        const wasCommitted = Boolean(r.verbalCommitment);
+	        const committedSchool = r.verbalCommitment;
+
+        if (packageResolvedIds.has(r.id)) return;
+        const { allOffers, offerDetails } = getRecruitOfferDetails(r);
+        if (allOffers.length === 0) return;
 
 	        const topOffer = offerDetails[0];
 	        if (!topOffer) return;
@@ -5696,9 +5920,10 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 
             const offerCount = offerDetails.length;
             const packageCommitAdj = hasPackageDeal && hasMutualPackageOffer ? 1 : 0;
-            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0), 65, 92);
-            const shareGate = clamp(78 - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0), 18, 78);
-            const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - (packageCommitAdj ? 2 : 0), 2, 14);
+            const pressureAdjustment = Math.round(decisionPressure * 8);
+            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0) - pressureAdjustment, 62, 92);
+            const shareGate = clamp(78 - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0) - Math.round(decisionPressure * 10), 15, 78);
+            const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - (packageCommitAdj ? 2 : 0) - Math.round(decisionPressure * 2), 1, 14);
 
             const canCommitThisWeek = week >= Math.max(1, minCommitWeek - (packageCommitAdj ? 1 : 0));
             const hasClearLead = offerDetails.length === 1 || interestDifference >= leadGate;
@@ -5725,7 +5950,8 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 	            } else if (week > 8 && r.stars <= 3 && allOffers.length <= 4) {
                 // Late season "desperation" for lower-rated recruits with few offers
                 const desperationCommitThreshold = 30 + (week - 8); // Starts at 30 and increases
-	                if (topOffer.score > desperationCommitThreshold) {
+                const adjustedDesperationThreshold = Math.max(20, desperationCommitThreshold - Math.round(decisionPressure * 6));
+	                if (topOffer.score > adjustedDesperationThreshold) {
 	                    r.verbalCommitment = topOffer.name;
 	                    r.softCommitment = false;
 	                    r.isTargeted = false;
@@ -9669,4 +9895,3 @@ export const runDailySimulation = (
 
     return { updatedState: { currentDate: addDaysISO(currentDate, 1) }, messages: [] };
 };
-
