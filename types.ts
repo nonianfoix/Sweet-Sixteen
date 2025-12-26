@@ -145,6 +145,20 @@ export type TeamWealth = ProgramWealth;
 export type TrainingFocus = 'Balanced' | 'Inside Scoring' | 'Outside Scoring' | 'Playmaking' | 'Defense' | 'Rebounding' | 'Athleticism';
 export type TrainingIntensity = 'Light' | 'Medium' | 'Intense';
 
+export type PlayerDevelopmentDNA = 'FastDeveloper' | 'Steady' | 'LateBloomer' | 'Coaster';
+export type PlayerPlayStyleIdentity =
+    | 'PacePusher'
+    | 'FloorGeneral'
+    | '3PointBomber'
+    | 'RimPressure'
+    | 'ShotCreator'
+    | '3AndD'
+    | 'DefensiveAnchor'
+    | 'GlassCleaner'
+    | 'PostHub'
+    | 'StretchBig'
+    | 'Connector';
+
 export interface Player {
   id: string;
   name: string;
@@ -206,6 +220,12 @@ export interface Player {
   injury?: PlayerInjury;
   trainingFocus?: TrainingFocus;
   trainingIntensity?: TrainingIntensity;
+  playStyleIdentity?: PlayerPlayStyleIdentity;
+  developmentDNA?: PlayerDevelopmentDNA;
+  // Multiplier on all skill progression (roughly 0.75 - 1.25)
+  developmentRate?: number;
+  // How much of the listed potential is realistically reachable (roughly 0.80 - 1.00)
+  potentialReach?: number;
 }
 
 export interface Transfer extends Player {
@@ -227,6 +247,8 @@ export type Dealbreaker = 'NIL' | 'PlayingTime' | 'Proximity' | 'Academics' | 'N
 export type VisitStatus = 'None' | 'Scheduled' | 'Completed' | 'Cancelled';
 export type OfferPitchType = 'Standard' | 'EarlyPush' | 'NILHeavy' | 'PlayingTimePromise' | 'LocalAngle' | 'AcademicPitch';
 export type RecruitingStage = 'Open' | 'Narrowing' | 'SoftCommit' | 'HardCommit' | 'Signed';
+export type RecruitDecisionStyle = 'Decisive' | 'Balanced' | 'Indecisive';
+export type RecruitCommitmentStyle = 'FrontRunner' | 'Balanced' | 'Underdog';
 
 export type AthleticismTier = 'A' | 'B' | 'C' | 'D';
 
@@ -327,6 +349,9 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   familyLastNameGroupId?: string;
   softCommitment: boolean;
   resilience: number; // 0-100, difficulty to flip
+  decisionStyle?: RecruitDecisionStyle;
+  commitmentStyle?: RecruitCommitmentStyle;
+  fitStrictness?: number; // 0-100, higher = sharper preferences + tougher to win over
 }
 
 export type RotationPreference = 'balanced' | 'starterHeavy' | 'sevenSecond' | 'threeAndD' | 'defensive';

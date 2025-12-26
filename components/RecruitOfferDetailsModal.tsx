@@ -290,8 +290,30 @@ export default function RecruitOfferDetailsModal({
   const stagePill: React.CSSProperties = {
     ...infoPill,
     background: '#eff6ff',
-    border: '1px solid #dbeafe',
+    border: '2px solid #2563eb',
     color: '#1d4ed8',
+  };
+
+  const headerStatPillBase: React.CSSProperties = {
+    ...infoPill,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 10px',
+    whiteSpace: 'nowrap',
+  };
+
+  const headerStatLabel: React.CSSProperties = {
+    fontSize: '10px',
+    fontWeight: 900,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    opacity: 0.75,
+  };
+
+  const headerStatValue: React.CSSProperties = {
+    fontSize: '12px',
+    fontWeight: 900,
   };
 
   const tagChip: React.CSSProperties = {
@@ -510,10 +532,67 @@ export default function RecruitOfferDetailsModal({
                 {typeof recruit.height === 'number' ? <span style={infoPill}>Ht {formatPlayerHeight(recruit.height)}</span> : null}
                 {recruit.weight ? <span style={infoPill}>Wt {recruit.weight} lbs</span> : null}
                 {recruit.wingspan ? <span style={infoPill}>WS {recruit.wingspan}&quot;</span> : null}
-                <span style={{ ...infoPill, background: '#111827', borderColor: '#111827', color: '#ffffff' }}>Interest {recruit.interest}/100</span>
+                <span style={{ ...infoPill, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>Interest {recruit.interest}/100</span>
                 {recruit.verbalCommitment ? (
-                  <span style={{ ...infoPill, background: '#fef9c3', borderColor: '#fde68a', color: '#854d0e' }}>Verbal: {recruit.verbalCommitment}</span>
+                  <span style={{ ...infoPill, background: '#fef9c3', border: '2px solid #fde68a', color: '#854d0e' }}>Verbal: {recruit.verbalCommitment}</span>
                 ) : null}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', rowGap: '6px', marginTop: '10px' }}>
+                <span style={{ ...headerStatPillBase, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>
+                  <span style={{ ...headerStatLabel, opacity: 0.85 }}>Stars/Pos</span>
+                  <span style={headerStatValue}>
+                    {'\u2605'.repeat(Math.max(0, Math.min(5, recruit.stars)))} {recruit.position}{recruit.secondaryPosition ? `/${recruit.secondaryPosition}` : ''}
+                  </span>
+                </span>
+
+                <span style={{ ...headerStatPillBase, background: '#dbeafe', border: '2px solid #1d4ed8', color: '#1d4ed8' }}>
+                  <span style={headerStatLabel}>Archetype</span>
+                  <span style={headerStatValue}>{recruit.archetype || '-'}</span>
+                </span>
+
+                <span
+                  style={{
+                    ...headerStatPillBase,
+                    background: recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#fee2e2' : '#f3f4f6',
+                    border: `2px solid ${recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#dc2626' : '#6b7280'}`,
+                    color: recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#b91c1c' : '#374151',
+                  }}
+                >
+                  <span style={headerStatLabel}>Dealbreaker</span>
+                  <span style={headerStatValue}>{recruit.dealbreaker || 'None'}</span>
+                </span>
+
+                <span style={{ ...headerStatPillBase, background: '#ecfdf5', border: '2px solid #16a34a', color: '#166534' }}>
+                  <span style={headerStatLabel}>Res</span>
+                  <span style={headerStatValue}>{recruit.resilience}</span>
+                </span>
+
+                <span style={{ ...headerStatPillBase, background: '#f5f3ff', border: '2px solid #7c3aed', color: '#5b21b6' }}>
+                  <span style={headerStatLabel}>Coach</span>
+                  <span style={headerStatValue}>{recruit.coachability ?? '-'}</span>
+                </span>
+
+                <span style={{ ...headerStatPillBase, background: '#fff7ed', border: '2px solid #f97316', color: '#9a3412' }}>
+                  <span style={headerStatLabel}>Hype</span>
+                  <span style={headerStatValue}>{recruit.hypeLevel ?? '-'}</span>
+                </span>
+
+                <span
+                  style={{
+                    ...headerStatPillBase,
+                    background: '#fef9c3',
+                    border: '2px solid #ca8a04',
+                    color: '#854d0e',
+                    maxWidth: '260px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  title={recruit.nilPriority || ''}
+                >
+                  <span style={headerStatLabel}>NIL</span>
+                  <span style={{ ...headerStatValue, overflow: 'hidden', textOverflow: 'ellipsis' }}>{recruit.nilPriority || '-'}</span>
+                </span>
               </div>
             </div>
 
@@ -595,7 +674,7 @@ export default function RecruitOfferDetailsModal({
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '12px' }}>
-                {shortlistOfferDetails.length ? shortlistOfferDetails.map(offer => (
+                {interestSorted.length ? interestSorted.map(offer => (
                   <OfferCard key={offer.name} offer={offer} />
                 )) : <div style={{ color: '#6b7280' }}>No offers yet.</div>}
               </div>
@@ -713,41 +792,7 @@ export default function RecruitOfferDetailsModal({
 
                 {sideTab === 'profile' && (
                   <div style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
-                      <div style={{ background: '#111827', color: '#fff', borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stars / Pos</div>
-                        <div style={{ fontSize: '13px', fontWeight: 900, marginTop: '4px' }}>{'\u2605'.repeat(Math.max(0, Math.min(5, recruit.stars)))} / {recruit.position}{recruit.secondaryPosition ? `/${recruit.secondaryPosition}` : ''}</div>
-                      </div>
-                      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Archetype</div>
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827', marginTop: '4px' }}>{recruit.archetype || '—'}</div>
-                      </div>
-                      <div style={{ background: recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#fef2f2' : '#ffffff', border: `1px solid ${recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#b91c1c' : '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Dealbreaker</div>
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: recruit.dealbreaker && recruit.dealbreaker !== 'None' ? '#b91c1c' : '#111827', marginTop: '4px' }}>{recruit.dealbreaker || '—'}</div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginTop: '10px' }}>
-                      <div style={{ ...infoPill, borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Resilience</div>
-                        <div style={{ fontSize: '14px', fontWeight: 900, color: '#111827', marginTop: '4px' }}>{recruit.resilience}</div>
-                      </div>
-                      <div style={{ ...infoPill, borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coachability</div>
-                        <div style={{ fontSize: '14px', fontWeight: 900, color: '#111827', marginTop: '4px' }}>{recruit.coachability ?? '—'}</div>
-                      </div>
-                      <div style={{ ...infoPill, borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Hype</div>
-                        <div style={{ fontSize: '14px', fontWeight: 900, color: '#111827', marginTop: '4px' }}>{recruit.hypeLevel ?? '—'}</div>
-                      </div>
-                      <div style={{ ...infoPill, borderRadius: '12px', padding: '10px 10px' }}>
-                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>NIL</div>
-                        <div style={{ fontSize: '12px', fontWeight: 900, color: '#111827', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{recruit.nilPriority || '—'}</div>
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
+                    <div style={{ marginTop: '0px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827' }}>What Matters</div>
                         <div style={{ fontSize: '12px', color: '#6b7280' }}>weights</div>

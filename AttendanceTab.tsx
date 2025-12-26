@@ -63,6 +63,24 @@ const getZoneLabel = (key: SeatSegmentKey) =>
         .replace(/^./, str => str.toUpperCase())
         .trim();
 
+const dedupeAttendanceRecords = (records: GameAttendanceRecord[]): GameAttendanceRecord[] => {
+    const indexByKey = new Map<string, number>();
+    const deduped: GameAttendanceRecord[] = [];
+    for (const record of records || []) {
+        const key =
+            record.gameId ||
+            `${record.week ?? 'na'}|${record.opponent}|${record.attendance}|${record.capacity ?? 'na'}|${record.revenue}|${record.simulated ? 'sim' : 'real'}`;
+        const existingIndex = indexByKey.get(key);
+        if (existingIndex == null) {
+            indexByKey.set(key, deduped.length);
+            deduped.push(record);
+        } else {
+            deduped[existingIndex] = record;
+        }
+    }
+    return deduped;
+};
+
 const describeDemandScore = (score?: number) => {
     if (score == null) return 'Unknown';
     if (score >= 1.1) return 'Surging';
@@ -214,11 +232,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
     };
 
     const attendanceHistory = useMemo<GameAttendanceRecord[]>(() => {
-        if (arena?.attendanceLog?.length) {
-            return arena.attendanceLog;
-        }
-        return state.currentUserTeamAttendance;
+        const source = arena?.attendanceLog?.length ? arena.attendanceLog : state.currentUserTeamAttendance;
+        return dedupeAttendanceRecords(source);
     }, [arena?.attendanceLog, state.currentUserTeamAttendance]);
+
+    const gameLogsById = useMemo(() => new Map((state.gameLogs || []).map(log => [log.gameId, log] as const)), [state.gameLogs]);
 
     const topSellingSegment = useMemo(() => {
         if (!attendanceForecast) return null;
@@ -687,7 +705,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
                                 </tr>
                             </thead>
                             <tbody>
-                                {[...attendanceHistory].reverse().map((entry, index) => {
+                                {[...attendanceHistory].reverse().map((entry) => {
                                     const pct =
                                         entry.capacity && entry.capacity > 0
                                             ? (entry.attendance / entry.capacity) * 100
@@ -695,12 +713,42 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
                                     const labelWeek =
                                         entry.week != null
                                             ? `Week ${entry.week}`
-                                            : `Game ${attendanceHistory.length - index}`;
+                                            : `Game`;
+                                    const gameLog = entry.gameId ? gameLogsById.get(entry.gameId) : undefined;
+                                    const userScore =
+                                        gameLog
+                                            ? (gameLog.homeTeam === userTeam.name ? gameLog.homeScore : gameLog.awayScore)
+                                            : undefined;
+                                    const opponentScore =
+                                        gameLog
+                                            ? (gameLog.homeTeam === userTeam.name ? gameLog.awayScore : gameLog.homeScore)
+                                            : undefined;
+                                    const didWin =
+                                        typeof userScore === 'number' && typeof opponentScore === 'number'
+                                            ? userScore > opponentScore
+                                            : null;
                                     return (
-                                        <tr key={`${entry.gameId ?? labelWeek}-${index}`}>
+                                        <tr key={entry.gameId ?? `${labelWeek}-${entry.opponent}`}>
                                             <td>
-                                                {labelWeek} vs {entry.opponent}{' '}
-                                                {entry.simulated ? <em style={{ color: '#888' }}>(Forecast)</em> : null}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <span>
+                                                        {labelWeek} vs {entry.opponent}
+                                                    </span>
+                                                    {typeof userScore === 'number' && typeof opponentScore === 'number' && didWin != null ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (!gameLog) return;
+                                                                dispatch({ type: 'VIEW_GAME_LOG', payload: { gameLog } });
+                                                            }}
+                                                            style={styles.scorePillButton(didWin ? 'win' : 'loss')}
+                                                            title="Open game log"
+                                                        >
+                                                            {didWin ? 'W' : 'L'} {userScore}-{opponentScore}
+                                                        </button>
+                                                    ) : null}
+                                                    {entry.simulated ? <em style={{ color: '#888' }}>(Forecast)</em> : null}
+                                                </div>
                                             </td>
                                             <td>{entry.attendance.toLocaleString()} / {entry.capacity?.toLocaleString() ?? '—'}</td>
                                             <td>{pct.toFixed(1)}%</td>
@@ -799,6 +847,18 @@ const styles = {
         textTransform: 'capitalize',
         backgroundColor: '#f5f5f5',
     } as React.CSSProperties,
+    scorePillButton: (tone: 'win' | 'loss') =>
+        ({
+            backgroundColor: '#fff',
+            color: tone === 'win' ? '#0B8043' : '#B22222',
+            border: '1px solid rgba(0,0,0,0.18)',
+            borderRadius: 999,
+            padding: '0.2rem 0.45rem',
+            fontSize: '0.55rem',
+            fontFamily: "'Press Start 2P', cursive",
+            lineHeight: 1.2,
+            cursor: 'pointer',
+        }) as React.CSSProperties,
     table: {
         width: '100%',
         borderCollapse: 'collapse',

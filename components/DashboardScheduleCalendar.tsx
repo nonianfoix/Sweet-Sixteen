@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { GameEvent, GameResult, ISODate, Month } from '../types';
 import { isoToJsDateUTC } from '../services/dateService';
 import type { TeamColors } from '../types';
@@ -47,6 +47,8 @@ export const DashboardScheduleCalendar = ({
     getLogoSrc,
     getTeamColors,
     onSelectHomeGame,
+    onViewGameLog,
+    followCurrentDate = false,
 }: {
     userTeamName: string;
     userTeamColors: TeamColors;
@@ -57,6 +59,8 @@ export const DashboardScheduleCalendar = ({
     getLogoSrc: (schoolName: string) => string;
     getTeamColors: (schoolName: string) => TeamColors;
     onSelectHomeGame?: (info: { week: number; date: ISODate; opponent: string }) => void;
+    onViewGameLog?: (info: { week: number; opponent: string; isHome: boolean }) => void;
+    followCurrentDate?: boolean;
 }) => {
     const currentJsDate = useMemo(() => isoToJsDateUTC(currentDate), [currentDate]);
 
@@ -88,8 +92,42 @@ export const DashboardScheduleCalendar = ({
         return map;
     }, [eventQueue, schedule, userTeamName]);
 
-    const [viewYear, setViewYear] = useState(currentJsDate.getUTCFullYear());
-    const [viewMonthIndex, setViewMonthIndex] = useState(currentJsDate.getUTCMonth());
+    const seasonStartYear = useMemo(() => {
+        const gameDates = (eventQueue || [])
+            .filter(e => e.type === 'GAME' && typeof e.date === 'string' && e.date.length >= 7)
+            .map(e => e.date)
+            .sort();
+        if (gameDates.length > 0) {
+            return isoToJsDateUTC(gameDates[0]).getUTCFullYear();
+        }
+        const month = currentJsDate.getUTCMonth();
+        const year = currentJsDate.getUTCFullYear();
+        return month >= 10 ? year : year - 1;
+    }, [currentJsDate, eventQueue]);
+
+    const minMonthStart = useMemo(() => new Date(Date.UTC(seasonStartYear, 10, 1)), [seasonStartYear]);
+    const maxMonthStart = useMemo(() => new Date(Date.UTC(seasonStartYear + 1, 5, 1)), [seasonStartYear]);
+
+    const clampToMonthBounds = (d: Date) => {
+        if (d.getTime() < minMonthStart.getTime()) return minMonthStart;
+        if (d.getTime() > maxMonthStart.getTime()) return maxMonthStart;
+        return d;
+    };
+
+    const initialMonthStart = clampToMonthBounds(new Date(Date.UTC(currentJsDate.getUTCFullYear(), currentJsDate.getUTCMonth(), 1)));
+    const [viewYear, setViewYear] = useState(initialMonthStart.getUTCFullYear());
+    const [viewMonthIndex, setViewMonthIndex] = useState(initialMonthStart.getUTCMonth());
+
+    useEffect(() => {
+        if (!followCurrentDate) return;
+        const targetMonthStart = clampToMonthBounds(new Date(Date.UTC(currentJsDate.getUTCFullYear(), currentJsDate.getUTCMonth(), 1)));
+        const nextYear = targetMonthStart.getUTCFullYear();
+        const nextMonth = targetMonthStart.getUTCMonth();
+        if (nextYear !== viewYear || nextMonth !== viewMonthIndex) {
+            setViewYear(nextYear);
+            setViewMonthIndex(nextMonth);
+        }
+    }, [currentJsDate, followCurrentDate, maxMonthStart, minMonthStart, viewMonthIndex, viewYear]);
 
     const viewMonth: Month = monthIndexToMonth(viewMonthIndex);
 
@@ -112,12 +150,18 @@ export const DashboardScheduleCalendar = ({
         return cells;
     }, [viewMonthIndex, viewYear]);
 
+    const viewMonthStart = useMemo(() => new Date(Date.UTC(viewYear, viewMonthIndex, 1)), [viewMonthIndex, viewYear]);
+    const isPrevDisabled = viewMonthStart.getTime() <= minMonthStart.getTime();
+    const isNextDisabled = viewMonthStart.getTime() >= maxMonthStart.getTime();
+
     const onPrevMonth = () => {
+        if (isPrevDisabled) return;
         const next = new Date(Date.UTC(viewYear, viewMonthIndex - 1, 1));
         setViewYear(next.getUTCFullYear());
         setViewMonthIndex(next.getUTCMonth());
     };
     const onNextMonth = () => {
+        if (isNextDisabled) return;
         const next = new Date(Date.UTC(viewYear, viewMonthIndex + 1, 1));
         setViewYear(next.getUTCFullYear());
         setViewMonthIndex(next.getUTCMonth());
@@ -147,8 +191,40 @@ export const DashboardScheduleCalendar = ({
                     <div style={{ color: ink, fontSize: 16, fontWeight: 800 }}>{MONTH_LABELS[viewMonth]} {viewYear}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={onPrevMonth} style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${cardBorder}`, background: surfaceBg, color: ink, cursor: 'pointer' }}>‹</button>
-                    <button type="button" onClick={onNextMonth} style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${cardBorder}`, background: surfaceBg, color: ink, cursor: 'pointer' }}>›</button>
+                    <button
+                        type="button"
+                        onClick={onPrevMonth}
+                        disabled={isPrevDisabled}
+                        style={{
+                            padding: '6px 10px',
+                            borderRadius: 8,
+                            border: `1px solid ${cardBorder}`,
+                            background: surfaceBg,
+                            color: ink,
+                            cursor: isPrevDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isPrevDisabled ? 0.45 : 1,
+                        }}
+                        aria-label="Previous month"
+                    >
+                        ‹
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onNextMonth}
+                        disabled={isNextDisabled}
+                        style={{
+                            padding: '6px 10px',
+                            borderRadius: 8,
+                            border: `1px solid ${cardBorder}`,
+                            background: surfaceBg,
+                            color: ink,
+                            cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isNextDisabled ? 0.45 : 1,
+                        }}
+                        aria-label="Next month"
+                    >
+                        ›
+                    </button>
                 </div>
             </div>
 
@@ -281,15 +357,30 @@ export const DashboardScheduleCalendar = ({
                                             {matchupLabel}
                                         </div>
                                         {userGame.played && typeof userGame.userScore === 'number' && typeof userGame.opponentScore === 'number' ? (
-                                            <div style={{ 
-                                                color: userGame.userScore > userGame.opponentScore ? '#16a34a' : '#dc2626', 
-                                                fontSize: 14, 
-                                                fontWeight: 900, 
-                                                lineHeight: 1,
-                                                marginTop: 4
-                                            }}>
-                                                {userGame.userScore}-{userGame.opponentScore}
-                                            </div>
+                                            <button
+                                                type="button"
+                                                disabled={typeof onViewGameLog !== 'function'}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onViewGameLog?.({ week: userGame.week, opponent: userGame.opponent, isHome: userGame.isHome });
+                                                }}
+                                                style={{
+                                                    marginTop: 4,
+                                                    alignSelf: 'flex-start',
+                                                    background: '#ffffff',
+                                                    border: `1px solid ${cardBorder}`,
+                                                    borderRadius: 999,
+                                                    padding: '2px 8px',
+                                                    fontSize: 12,
+                                                    fontWeight: 900,
+                                                    lineHeight: 1.2,
+                                                    color: userGame.userScore > userGame.opponentScore ? '#16a34a' : '#dc2626',
+                                                    cursor: typeof onViewGameLog === 'function' ? 'pointer' : 'not-allowed',
+                                                }}
+                                                title="Open game log"
+                                            >
+                                                {userGame.userScore > userGame.opponentScore ? 'W' : 'L'} {userGame.userScore}-{userGame.opponentScore}
+                                            </button>
                                         ) : (
                                             <div style={{ height: 10 }} />
                                         )}

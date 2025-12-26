@@ -82,7 +82,7 @@ import RecruitOfferDetailsModal from './components/RecruitOfferDetailsModal';
 import * as constants from './constants';
 import type { SponsorName } from './types';
 // FIX: Added missing function imports from gameService. This resolves multiple "has no exported member" errors.
-import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule, generateRecruitRelationships, recomputeRecruitBoardRanks, applyPackageDealOfferMirroring } from './services/gameService';
+import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, getRecruitOfferShareTemperatureMultiplier, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule, generateRecruitRelationships, recomputeRecruitBoardRanks, applyPackageDealOfferMirroring } from './services/gameService';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './services/draftUtils';
 import { ensurePlayerNilProfile, buildNilNegotiationCandidates, evaluateNilOffer, calculateTeamNilBudget } from './services/nilService';
 import { generateAlumni, updateAlumniRegistry } from './services/alumniService';
@@ -688,6 +688,24 @@ const mergeNBAFreeAgents = (current: NBAFreeAgent[], additions: NBAFreeAgent[]):
     });
     const merged = deduped.length ? [...current, ...deduped] : current;
     return applyNBAFreeAgentRetirementRules(merged);
+};
+
+const dedupeAttendanceRecords = (records: GameAttendanceRecord[]): GameAttendanceRecord[] => {
+    const indexByKey = new Map<string, number>();
+    const deduped: GameAttendanceRecord[] = [];
+    for (const record of records || []) {
+        const key =
+            record.gameId ||
+            `${record.week ?? 'na'}|${record.opponent}|${record.attendance}|${record.capacity ?? 'na'}|${record.revenue}|${record.simulated ? 'sim' : 'real'}`;
+        const existingIndex = indexByKey.get(key);
+        if (existingIndex == null) {
+            indexByKey.set(key, deduped.length);
+            deduped.push(record);
+        } else {
+            deduped[existingIndex] = record;
+        }
+    }
+    return deduped;
 };
 
 const calculateUnfinishedBusinessBonus = (teamName: string, tournament: Tournament | null): number => {
@@ -2383,7 +2401,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         lastSimWeekKey: currentSimKey,
         tournament,
         gameLogs: [...state.gameLogs, ...gameLogs],
-        currentUserTeamAttendance: [...state.currentUserTeamAttendance, ...newUserTeamAttendance],
+        currentUserTeamAttendance: dedupeAttendanceRecords([...state.currentUserTeamAttendance, ...newUserTeamAttendance]),
         toastMessage: toastMessage || state.toastMessage,
         coach: updatedCoach,
         freeAgentStaff: newFreeAgentStaff,
@@ -3233,6 +3251,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	            (offeredRecruit?.relationships || [])
 	                .filter(rel => rel.sportLevel === 'HS' && (rel.notes || '').toLowerCase().includes('package deal'))
 	                .map(rel => rel.personId)
+	                .filter(id => id && id !== offeredRecruit?.id)
 	        );
 	        return {
 	          ...state,
@@ -3251,8 +3270,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
 	            if (packageDealLinkedIds.has(r.id) && !r.verbalCommitment && !r.declinedOffers?.includes(teamName)) {
 	                const teamMomentum = { ...(r.teamMomentum || {}) };
-	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 3, -20, 20);
-	                const boosted = clamp(r.interest + 6, 0, 100);
+	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 7, -20, 20);
+	                const boosted = clamp(r.interest + 12, 0, 100);
 	                const lastRecruitingNews = r.lastRecruitingNews || (offeredRecruit ? `${r.name} is considering a package deal with ${offeredRecruit.name}.` : r.lastRecruitingNews);
 	                return boosted === r.interest ? { ...r, teamMomentum, lastRecruitingNews } : { ...r, interest: boosted, teamMomentum, lastRecruitingNews };
 	            }
@@ -5036,7 +5055,7 @@ const GameLogView = ({ state, dispatch, colors }: { state: GameState, dispatch: 
 
     return (
         <div style={{ padding: '10px', fontSize: '0.7rem' }}>
-            <button onClick={() => dispatch({ type: 'CHANGE_VIEW', payload: GameStatus.DASHBOARD })} style={styles.button}>Back to Dashboard</button>
+            <button onClick={() => dispatch({ type: 'CLOSE_GAME_LOG' })} style={styles.button}>Back</button>
             <Subheading color={colors.primary}>Game Log: {awayTeam} @ {homeTeam}</Subheading>
             <p style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '10px' }}>Final Score: {awayTeam} {awayScore} - {homeScore} {homeTeam}</p>
 
@@ -5387,9 +5406,151 @@ const Toast = ({ message, onDismiss }: { message: string; onDismiss: () => void 
 };
 
 
+const BRAND_LOGO_MODULES = import.meta.glob('./BRAND LOGOS/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const BRAND_LOGO_BY_FILE = Object.fromEntries(
+    Object.entries(BRAND_LOGO_MODULES).map(([modulePath, url]) => {
+        const fileName = modulePath.split(/[/\\\\]/).pop() || '';
+        return [fileName, url];
+    })
+) as Record<string, string>;
+
+const SPONSOR_LOGO_FILES: Record<SponsorName, string> = {
+    Nike: 'Logo_NIKE.svg',
+    Adidas: 'Adidas_2022_logo.svg',
+    Jordan: 'Jumpman_logo.svg',
+    'Under Armour': 'Under_armour_logo.svg',
+    Reebok: 'Reebok_wordmark_(1977-1993).svg',
+    'New Balance': '20160801155104!New_Balance_logo.svg',
+    Puma: 'Puma-logo-(text).svg',
+};
+
+const normalizeBrandLogoFileKey = (name: string) => (name || '').replace(/[–—-]/g, '-');
+const normalizeBrandLogoMatchText = (text: string) =>
+    (text || '')
+        .toLowerCase()
+        .replace(/[–—-]/g, '-')
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+const CONFERENCE_LOGO_FILES_BY_KEY = new Map<string, string>(
+    [
+        ['SEC', 'Southeastern_Conference_logo_(2024).svg'],
+        ['ACC', 'Atlantic_Coast_Conference_logo.svg'],
+        ['Big Ten', 'Big_Ten_Conference_logo.svg'],
+        ['B1G', 'Big_Ten_Conference_logo.svg'],
+        ['Big 12', 'Big_12_Conference_(cropped)_logo.svg'],
+        ['Big East', 'Big_East_Conference_logo.svg'],
+        ['Pac-12', 'Pac-12_logo.svg'],
+        ['Mountain West', 'Mountain_West_Conference_logo.svg'],
+        ['WCC', 'West_Coast_Conference_logo_2019_with_name.svg'],
+        ['AAC', 'American_Athletic_Conference_logo.svg'],
+        ['A-10', 'Atlantic_10_Conference_logo.svg'],
+        ['Atlantic 10', 'Atlantic_10_Conference_logo.svg'],
+        ['C-USA', 'CUSA_logo.svg'],
+        ['Conference USA', 'CUSA_logo.svg'],
+        ['MAC', 'Mid-American_Conference_logo.svg'],
+        ['Sun Belt', 'Sun_Belt_Conference_2020_logo_and_name.svg'],
+        ['MVC', 'Missouri_Valley_Conference_logo.svg'],
+        ['Missouri Valley', 'Missouri_Valley_Conference_logo.svg'],
+        ['Horizon', 'Horizon_League_2024_logo.svg'],
+        ['Horizon League', 'Horizon_League_2024_logo.svg'],
+        ['America East', 'America_East_Conference_logo_2024.svg'],
+        ['Big Sky', 'Big_Sky_Conference_logo.svg'],
+        ['Big South', 'Big_South_Conference_logo.svg'],
+        ['Big West', 'Big_West_Conference_logo_2021.svg'],
+        ['Ivy', 'Ivy_League_Logo.svg'],
+        ['Ivy League', 'Ivy_League_Logo.svg'],
+        ['WAC', 'Western_Athletic_Conference_logo.svg'],
+        ['Western Athletic', 'Western_Athletic_Conference_logo.svg'],
+        ['ASUN', 'ASUN_Primary_Mark.svg'],
+        ['SoCon', 'PrimaryBlue_SoCon.svg'],
+        ['Southern Conference', 'PrimaryBlue_SoCon.svg'],
+        ['CAA', 'Coastal_Athletic_Association_logo.svg'],
+        ['Coastal Athletic Association', 'Coastal_Athletic_Association_logo.svg'],
+        ['MAAC', 'Metro_Atlantic_Athletic_Conference_logo.svg'],
+        ['Metro Atlantic', 'Metro_Atlantic_Athletic_Conference_logo.svg'],
+        ['MEAC', 'Mid-Eastern_Athletic_Conference_logo.svg'],
+        ['Mid Eastern', 'Mid-Eastern_Athletic_Conference_logo.svg'],
+        ['NEC', 'NEC_nameless_logo.svg'],
+        ['OVC', 'Ohio_Valley_Conference_logo.svg'],
+        ['Ohio Valley', 'Ohio_Valley_Conference_logo.svg'],
+        ['Patriot', 'Patriot_league_conference_logo.svg'],
+        ['Patriot League', 'Patriot_league_conference_logo.svg'],
+        ['Southland', 'Southland_Conference_primary_logo.svg'],
+        ['SWAC', 'Southwestern_Athletic_Conference_logo.svg'],
+        ['Summit', 'Summit_League_logo.svg'],
+        ['Summit League', 'Summit_League_logo.svg'],
+    ].map(([k, v]) => [normalizeBrandLogoMatchText(k), v] as const)
+);
+
+const conferenceLogoCache = new Map<string, string | undefined>();
+
+const getBrandLogoUrlByFileName = (fileName: string): string | undefined => {
+    const direct = BRAND_LOGO_BY_FILE[fileName];
+    if (direct) return direct;
+    const normalizedTarget = normalizeBrandLogoFileKey(fileName);
+    const match = Object.keys(BRAND_LOGO_BY_FILE).find(key => normalizeBrandLogoFileKey(key) === normalizedTarget);
+    return match ? BRAND_LOGO_BY_FILE[match] : undefined;
+};
+
+const getSponsorLogoUrl = (name: SponsorName): string | undefined => {
+    const fileName = SPONSOR_LOGO_FILES[name];
+    return fileName ? getBrandLogoUrlByFileName(fileName) : undefined;
+};
+
+const getConferenceLogoUrl = (conferenceLabel: string): string | undefined => {
+    if (!conferenceLabel) return undefined;
+    if (conferenceLabel === 'Independent') return undefined;
+    const cached = conferenceLogoCache.get(conferenceLabel);
+    if (conferenceLogoCache.has(conferenceLabel)) return cached;
+
+    const query = normalizeBrandLogoMatchText(conferenceLabel);
+    const normalizedNoGenericWords = query
+        .split(' ')
+        .filter(Boolean)
+        .filter(t => !['conference', 'league', 'athletic', 'association', 'the', 'of'].includes(t))
+        .join(' ')
+        .trim();
+
+    const mappedFileName =
+        CONFERENCE_LOGO_FILES_BY_KEY.get(query) ?? CONFERENCE_LOGO_FILES_BY_KEY.get(normalizedNoGenericWords);
+    if (mappedFileName) {
+        const resolvedFromMap = getBrandLogoUrlByFileName(mappedFileName);
+        conferenceLogoCache.set(conferenceLabel, resolvedFromMap);
+        return resolvedFromMap;
+    }
+
+    const tokens = normalizedNoGenericWords
+        .split(' ')
+        .filter(Boolean)
+        .filter(t => !['conference', 'league', 'athletic', 'association', 'the', 'of'].includes(t));
+
+    const fileNames = Object.keys(BRAND_LOGO_BY_FILE);
+    let best: { file: string; score: number } | null = null;
+
+    for (const file of fileNames) {
+        const norm = normalizeBrandLogoMatchText(file);
+        if (!norm) continue;
+        if (!tokens.every(t => norm.includes(t))) continue;
+
+        let score = tokens.length * 10;
+        if (norm.includes('conference')) score += 6;
+        if (norm.includes('league')) score += 6;
+        if (norm.includes('logo')) score += 3;
+        score += Math.max(0, 30 - norm.length) * 0.1;
+
+        if (!best || score > best.score) best = { file, score };
+    }
+
+    const resolved = best ? BRAND_LOGO_BY_FILE[best.file] : undefined;
+    conferenceLogoCache.set(conferenceLabel, resolved);
+    return resolved;
+};
+
 const SponsorDisplay = ({ sponsor, yearsRemaining, onClick }: { sponsor: Sponsor, yearsRemaining: number, onClick?: () => void }) => {
-    const slogan = SPONSOR_SLOGANS[sponsor.name];
     const clickable = typeof onClick === 'function';
+    const sponsorLogoUrl = getSponsorLogoUrl(sponsor.name);
     return (
         <div
             style={{ ...styles.sponsorDisplay, cursor: clickable ? 'pointer' : 'default' }}
@@ -5397,8 +5558,16 @@ const SponsorDisplay = ({ sponsor, yearsRemaining, onClick }: { sponsor: Sponsor
             role={clickable ? 'button' : undefined}
             aria-label={clickable ? 'Open sponsor management' : undefined}
         >
-            <span>{sponsor.name.toUpperCase()} ({yearsRemaining} YRS LEFT)</span>
-            {slogan && <span style={styles.sponsorSlogan}>{slogan}</span>}
+            {sponsorLogoUrl ? (
+                <img
+                    src={sponsorLogoUrl}
+                    alt={sponsor.name}
+                    style={{ height: '22px', width: 'auto', objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+                />
+            ) : (
+                <span>{sponsor.name.toUpperCase()}</span>
+            )}
+            <span style={styles.sponsorSlogan}>{yearsRemaining} YRS LEFT</span>
         </div>
     );
 };
@@ -5510,6 +5679,7 @@ const schoolNameToSlug = (name: string): string => {
     "USC": "southern-california",
     "Saint Mary's": "st-marys-ca",
     "NC State": "north-carolina-st",
+    "UT Arlington": "texas-arlington",
     "South Florida": "south-fla",
     "Detroit Mercy": "detroit",
     "Maryland Eastern Shore": "umes.png",
@@ -5522,7 +5692,562 @@ const schoolNameToSlug = (name: string): string => {
   return `${name.toLowerCase().replace(/ /g, '-').replace(/[&'.()]/g, '')}.svg`;
 };
 
-const Header = ({ state, dispatch, colors, onHeaderClick, onSponsorClick, onCoachClick }: { state: GameState, dispatch: React.Dispatch<GameAction>, colors: TeamColors, onHeaderClick: () => void, onSponsorClick: () => void, onCoachClick: () => void }) => {
+const ConferenceHubModal = ({
+    state,
+    conferenceLabel,
+    conferenceLogoUrl,
+    onClose,
+    onOpenStandings,
+}: {
+    state: GameState;
+    conferenceLabel: string;
+    conferenceLogoUrl?: string;
+    onClose: () => void;
+    onOpenStandings: () => void;
+}) => {
+    const [activeTab, setActiveTab] = useState<'overview' | 'standings' | 'leaders' | 'recruits'>('overview');
+    const [selectedConference, setSelectedConference] = useState(conferenceLabel);
+
+    useEffect(() => {
+        setSelectedConference(conferenceLabel);
+    }, [conferenceLabel]);
+
+    const availableConferences = useMemo(() => {
+        return [...new Set(state.allTeams.map(t => t.conference).filter(Boolean))].sort((a, b) =>
+            a.localeCompare(b)
+        );
+    }, [state.allTeams]);
+
+    const conferenceLabelActive = selectedConference || conferenceLabel;
+    const conferenceLogoUrlActive = getConferenceLogoUrl(conferenceLabelActive) ?? conferenceLogoUrl;
+
+    const conferenceTeams = useMemo(() => {
+        return [...state.allTeams]
+            .filter(t => t.conference === conferenceLabelActive)
+            .sort((a, b) => {
+                if (b.record.wins !== a.record.wins) return b.record.wins - a.record.wins;
+                if (a.record.losses !== b.record.losses) return a.record.losses - b.record.losses;
+                return b.prestige - a.prestige;
+            });
+    }, [state.allTeams, conferenceLabelActive]);
+
+    const userTeamConferenceRank = useMemo(() => {
+        if (!state.userTeam) return null;
+        if (state.userTeam.conference !== conferenceLabelActive) return null;
+        const idx = conferenceTeams.findIndex(t => t.name === state.userTeam!.name);
+        return idx >= 0 ? idx + 1 : null;
+    }, [state.userTeam, conferenceTeams, conferenceLabelActive]);
+
+    const conferenceSummary = useMemo(() => {
+        if (!conferenceTeams.length) return null;
+        const totalWins = conferenceTeams.reduce((s, t) => s + (t.record?.wins || 0), 0);
+        const totalLosses = conferenceTeams.reduce((s, t) => s + (t.record?.losses || 0), 0);
+        const avgPrestige =
+            conferenceTeams.reduce((s, t) => s + (typeof t.prestige === 'number' ? t.prestige : 0), 0) / conferenceTeams.length;
+        const leader = conferenceTeams[0];
+        return {
+            teamCount: conferenceTeams.length,
+            totalWins,
+            totalLosses,
+            avgPrestige: Math.round(avgPrestige),
+            leaderTeam: leader?.name,
+        };
+    }, [conferenceTeams]);
+
+    const topConferencePlayers = useMemo(() => {
+        return conferenceTeams
+            .flatMap(team => team.roster.map(player => ({ player, teamName: team.name })))
+            .sort((a, b) => (b.player.overall || 0) - (a.player.overall || 0))
+            .slice(0, 12);
+    }, [conferenceTeams]);
+
+    const playerLeaders = useMemo(() => {
+        const players = conferenceTeams.flatMap(team => team.roster.map(player => ({ player, teamName: team.name })));
+        const perGame = (value: number, games: number) => (games > 0 ? value / games : 0);
+
+        const scored = [...players]
+            .sort(
+                (a, b) =>
+                    perGame(b.player.seasonStats?.points || 0, b.player.seasonStats?.gamesPlayed || 0) -
+                    perGame(a.player.seasonStats?.points || 0, a.player.seasonStats?.gamesPlayed || 0)
+            )
+            .slice(0, 10);
+        const reb = [...players]
+            .sort(
+                (a, b) =>
+                    perGame(b.player.seasonStats?.rebounds || 0, b.player.seasonStats?.gamesPlayed || 0) -
+                    perGame(a.player.seasonStats?.rebounds || 0, a.player.seasonStats?.gamesPlayed || 0)
+            )
+            .slice(0, 10);
+        const ast = [...players]
+            .sort(
+                (a, b) =>
+                    perGame(b.player.seasonStats?.assists || 0, b.player.seasonStats?.gamesPlayed || 0) -
+                    perGame(a.player.seasonStats?.assists || 0, a.player.seasonStats?.gamesPlayed || 0)
+            )
+            .slice(0, 10);
+        const ovr = [...players].sort((a, b) => (b.player.overall || 0) - (a.player.overall || 0)).slice(0, 10);
+
+        return { scored, reb, ast, ovr, perGame };
+    }, [conferenceTeams]);
+
+    const conferenceCommits = useMemo(() => {
+        const conferenceTeamNames = new Set(conferenceTeams.map(t => t.name));
+        return state.recruits
+            .filter(r => r.verbalCommitment && conferenceTeamNames.has(r.verbalCommitment))
+            .sort((a, b) => {
+                if ((b.stars || 0) !== (a.stars || 0)) return (b.stars || 0) - (a.stars || 0);
+                const aRank = a.nationalRank ?? 9999;
+                const bRank = b.nationalRank ?? 9999;
+                if (aRank !== bRank) return aRank - bRank;
+                return (b.overall || 0) - (a.overall || 0);
+            })
+            .slice(0, 10);
+    }, [state.recruits, conferenceTeams]);
+
+    const topAvailableRecruits = useMemo(() => {
+        return [...state.recruits]
+            .filter(r => !r.verbalCommitment)
+            .sort((a, b) => {
+                if ((b.stars || 0) !== (a.stars || 0)) return (b.stars || 0) - (a.stars || 0);
+                const aRank = a.nationalRank ?? 9999;
+                const bRank = b.nationalRank ?? 9999;
+                if (aRank !== bRank) return aRank - bRank;
+                return (b.interest || 0) - (a.interest || 0);
+            })
+            .slice(0, 12);
+    }, [state.recruits]);
+
+    const topRecruitsNational = useMemo(() => {
+        return [...state.recruits]
+            .sort((a, b) => {
+                if ((b.stars || 0) !== (a.stars || 0)) return (b.stars || 0) - (a.stars || 0);
+                const aRank = a.nationalRank ?? 9999;
+                const bRank = b.nationalRank ?? 9999;
+                if (aRank !== bRank) return aRank - bRank;
+                return (b.interest || 0) - (a.interest || 0);
+            })
+            .slice(0, 10);
+    }, [state.recruits]);
+
+    return (
+        <div style={styles.conferenceHubOverlay} onClick={onClose} role="dialog" aria-modal="true" aria-label={`${conferenceLabelActive} hub`}>
+            <div style={styles.conferenceHubModalContent} onClick={e => e.stopPropagation()}>
+                <button style={styles.conferenceHubCloseButton} onClick={onClose} aria-label="Close">X</button>
+
+                <div style={styles.conferenceHubHeader}>
+                    {conferenceLogoUrlActive ? (
+                        <img src={conferenceLogoUrlActive} alt={conferenceLabelActive} style={styles.conferenceHubLogo} />
+                    ) : null}
+                    <div style={styles.conferenceHubHeaderText}>
+                        <div style={styles.conferenceHubTitle}>{conferenceLabelActive}</div>
+                        <div style={styles.conferenceHubSubtitle}>Conference Hub</div>
+                        {conferenceSummary ? (
+                            <div style={styles.conferenceHubHeaderStatsRow}>
+                                <span style={{ ...styles.conferenceHubStatPill, ...styles.conferenceHubStatPillDark }}>
+                                    <span style={styles.conferenceHubStatLabel}>Teams</span>
+                                    <span style={styles.conferenceHubStatValue}>{conferenceSummary.teamCount}</span>
+                                </span>
+                                <span style={{ ...styles.conferenceHubStatPill, ...styles.conferenceHubStatPillBlue }}>
+                                    <span style={styles.conferenceHubStatLabel}>Combined</span>
+                                    <span style={styles.conferenceHubStatValue}>{conferenceSummary.totalWins}-{conferenceSummary.totalLosses}</span>
+                                </span>
+                                <span style={{ ...styles.conferenceHubStatPill, ...styles.conferenceHubStatPillGreen }}>
+                                    <span style={styles.conferenceHubStatLabel}>Avg Pres</span>
+                                    <span style={styles.conferenceHubStatValue}>{conferenceSummary.avgPrestige}</span>
+                                </span>
+                                <span style={{ ...styles.conferenceHubStatPill, ...styles.conferenceHubStatPillAmber }}>
+                                    <span style={styles.conferenceHubStatLabel}>Leader</span>
+                                    <span style={{ ...styles.conferenceHubStatValue, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{conferenceSummary.leaderTeam}</span>
+                                </span>
+                                <span style={{ ...styles.conferenceHubStatPill, ...styles.conferenceHubStatPillPurple }}>
+                                    <span style={styles.conferenceHubStatLabel}>Your Rank</span>
+                                    <span style={styles.conferenceHubStatValue}>{userTeamConferenceRank ?? '-'}</span>
+                                </span>
+                            </div>
+                        ) : null}
+                    </div>
+                    <div style={styles.conferenceHubHeaderActions}>
+                        <label style={styles.conferenceHubSelectLabel}>
+                            View
+                            <select
+                                value={conferenceLabelActive}
+                                onChange={e => setSelectedConference(e.target.value)}
+                                style={styles.conferenceHubSelect}
+                                aria-label="Select conference"
+                            >
+                                {availableConferences.map(c => (
+                                    <option key={c} value={c}>
+                                        {c}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <button style={styles.conferenceHubActionButton} onClick={onOpenStandings}>Standings</button>
+                    </div>
+                </div>
+
+                <div style={styles.conferenceHubTabs} role="tablist" aria-label="Conference hub tabs">
+                    {([
+                        ['overview', 'Overview'],
+                        ['standings', 'Standings'],
+                        ['leaders', 'Leaders'],
+                        ['recruits', 'Recruits'],
+                    ] as const).map(([key, label]) => (
+                        <button
+                            key={key}
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === key}
+                            onClick={() => setActiveTab(key)}
+                            style={{
+                                ...styles.conferenceHubTabButton,
+                                ...(activeTab === key ? styles.conferenceHubTabButtonActive : null),
+                            }}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                <div style={styles.conferenceHubBody}>
+                    {activeTab === 'overview' && (
+                        <div style={styles.conferenceHubGrid}>
+                    <section style={styles.conferenceHubPanel}>
+                        <div style={styles.conferenceHubPanelTitle}>Conference Snapshot</div>
+                        {conferenceSummary ? (
+                            <div style={styles.conferenceHubCardGrid}>
+                                <div style={styles.conferenceHubCard}>
+                                    <div style={styles.conferenceHubCardLabel}>Teams</div>
+                                    <div style={styles.conferenceHubCardValue}>{conferenceSummary.teamCount}</div>
+                                </div>
+                                <div style={styles.conferenceHubCard}>
+                                    <div style={styles.conferenceHubCardLabel}>Combined</div>
+                                    <div style={styles.conferenceHubCardValue}>
+                                        {conferenceSummary.totalWins}-{conferenceSummary.totalLosses}
+                                    </div>
+                                </div>
+                                <div style={styles.conferenceHubCard}>
+                                    <div style={styles.conferenceHubCardLabel}>Avg Prestige</div>
+                                    <div style={styles.conferenceHubCardValue}>{conferenceSummary.avgPrestige}</div>
+                                </div>
+                                <div style={styles.conferenceHubCard}>
+                                    <div style={styles.conferenceHubCardLabel}>Leader</div>
+                                    <div style={styles.conferenceHubCardValueSmall}>{conferenceSummary.leaderTeam}</div>
+                                </div>
+                                <div style={styles.conferenceHubCard}>
+                                    <div style={styles.conferenceHubCardLabel}>Your Rank</div>
+                                    <div style={styles.conferenceHubCardValue}>{userTeamConferenceRank ?? '-'}</div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={styles.conferenceHubEmpty}>No teams found for this conference.</div>
+                        )}
+
+                        <div style={{ ...styles.conferenceHubPanelSubTitle, marginTop: '10px' }}>Standings</div>
+                        <div style={styles.conferenceHubTableScroll}>
+                            <div style={{ ...styles.conferenceHubRow, ...styles.conferenceHubHeaderRow }}>
+                                <div style={{ flex: 2 }}>Team</div>
+                                <div style={{ flex: 1, textAlign: 'right' }}>W</div>
+                                <div style={{ flex: 1, textAlign: 'right' }}>L</div>
+                            </div>
+                            {conferenceTeams.map((t, idx) => (
+                                <div
+                                    key={`${t.name}-ov-${idx}`}
+                                    style={{
+                                        ...styles.conferenceHubRow,
+                                        backgroundColor: idx % 2 === 0 ? '#E0E0E0' : '#F2F2F2',
+                                        ...(state.userTeam?.name === t.name ? styles.conferenceHubRowHighlight : null),
+                                    }}
+                                >
+                                    <div style={{ flex: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {idx + 1}. {t.name}
+                                    </div>
+                                    <div style={{ flex: 1, textAlign: 'right' }}>{t.record.wins}</div>
+                                    <div style={{ flex: 1, textAlign: 'right' }}>{t.record.losses}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section style={styles.conferenceHubPanel}>
+                        <div style={styles.conferenceHubPanelTitle}>Top Players</div>
+                        <div style={styles.conferenceHubList}>
+                            {topConferencePlayers.map(({ player, teamName }) => (
+                                <div key={`${player.id}-${teamName}`} style={styles.conferenceHubListItem}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {player.name} <span style={{ opacity: 0.75 }}>{player.position}</span>
+                                        </div>
+                                        <div style={{ whiteSpace: 'nowrap' }}>
+                                            <span style={styles.conferenceHubPill}>OVR {player.overall}</span>
+                                        </div>
+                                    </div>
+                                    <div style={styles.conferenceHubMeta}>{teamName}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section style={styles.conferenceHubPanel}>
+                        <div style={styles.conferenceHubPanelTitle}>Top Recruits</div>
+                        <div style={styles.conferenceHubPanelSubTitle}>Committed to conference</div>
+                        <div style={styles.conferenceHubList}>
+                            {conferenceCommits.length ? (
+                                conferenceCommits.map(r => (
+                                    <div key={r.id} style={styles.conferenceHubListItem}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
+                                            </div>
+                                            <div style={{ whiteSpace: 'nowrap' }}>
+                                                <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
+                                            </div>
+                                        </div>
+                                        <div style={styles.conferenceHubMeta}>{r.verbalCommitment}</div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div style={styles.conferenceHubEmpty}>No commits yet.</div>
+                            )}
+                        </div>
+
+                        <div style={{ ...styles.conferenceHubPanelSubTitle, marginTop: '10px' }}>National board</div>
+                        <div style={styles.conferenceHubList}>
+                            {topRecruitsNational.map(r => (
+                                <div key={`${r.id}-nat`} style={styles.conferenceHubListItem}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
+                                        </div>
+                                        <div style={{ whiteSpace: 'nowrap' }}>
+                                            <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
+                                            {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
+                                        </div>
+                                    </div>
+                                    <div style={styles.conferenceHubMeta}>
+                                        {r.hometownCity && r.hometownState ? `${r.hometownCity}, ${r.hometownState}` : r.highSchoolName || ''}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'standings' && (
+                        <section style={styles.conferenceHubPanel}>
+                            <div style={styles.conferenceHubPanelTitle}>Standings</div>
+                            <div style={styles.conferenceStandingsHeader}>
+                                <div style={{ flex: 1 }}>Team</div>
+                                <div style={{ width: '70px', textAlign: 'right' }}>W</div>
+                                <div style={{ width: '70px', textAlign: 'right' }}>L</div>
+                                <div style={{ width: '90px', textAlign: 'right' }}>Prestige</div>
+                            </div>
+                            <div style={styles.conferenceStandingsScroll}>
+                                {conferenceTeams.map((t, idx) => {
+                                    const isUser = state.userTeam?.name === t.name;
+                                    const isLeader = idx === 0;
+                                    const teamLogoUrl = `school logos/${schoolNameToSlug(t.name)}`;
+                                    return (
+                                        <div
+                                            key={`${t.name}-${idx}`}
+                                            style={{
+                                                ...styles.conferenceStandingsRow,
+                                                ...(isUser ? styles.conferenceStandingsRowUser : null),
+                                                ...(isLeader ? styles.conferenceStandingsRowLeader : null),
+                                            }}
+                                        >
+                                            <div style={styles.conferenceStandingsTeamCell}>
+                                                <div style={styles.conferenceStandingsRank}>{idx + 1}.</div>
+                                                <img
+                                                    src={teamLogoUrl}
+                                                    alt={`${t.name} logo`}
+                                                    style={styles.conferenceStandingsTeamLogo}
+                                                />
+                                                <div style={styles.conferenceStandingsTeamName}>{t.name}</div>
+                                            </div>
+                                            <div style={styles.conferenceStandingsStatCell}>{t.record.wins}</div>
+                                            <div style={styles.conferenceStandingsStatCell}>{t.record.losses}</div>
+                                            <div style={{ ...styles.conferenceStandingsStatCell, width: '90px' }}>{t.prestige}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
+
+                    {activeTab === 'leaders' && (
+                        <div style={styles.conferenceHubGridAuto}>
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Scoring Leaders</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>PPG</div>
+                                <div style={styles.conferenceHubList}>
+                                    {playerLeaders.scored.map(({ player, teamName }, idx) => (
+                                        <div key={`${player.id}-ppg`} style={styles.conferenceHubListItem}>
+                                            <div style={styles.conferenceHubListItemRow}>
+                                                <div style={styles.conferenceHubListItemName}>
+                                                    {idx + 1}. {player.name} <span style={{ opacity: 0.75 }}>{player.position}</span>
+                                                </div>
+                                                <div style={styles.conferenceHubListItemValue}>
+                                                    <span style={styles.conferenceHubPill}>
+                                                        {playerLeaders
+                                                            .perGame(player.seasonStats?.points || 0, player.seasonStats?.gamesPlayed || 0)
+                                                            .toFixed(1)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div style={styles.conferenceHubMeta}>{teamName}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Assist Leaders</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>APG</div>
+                                <div style={styles.conferenceHubList}>
+                                    {playerLeaders.ast.map(({ player, teamName }, idx) => (
+                                        <div key={`${player.id}-apg`} style={styles.conferenceHubListItem}>
+                                            <div style={styles.conferenceHubListItemRow}>
+                                                <div style={styles.conferenceHubListItemName}>
+                                                    {idx + 1}. {player.name} <span style={{ opacity: 0.75 }}>{player.position}</span>
+                                                </div>
+                                                <div style={styles.conferenceHubListItemValue}>
+                                                    <span style={styles.conferenceHubPill}>
+                                                        {playerLeaders
+                                                            .perGame(player.seasonStats?.assists || 0, player.seasonStats?.gamesPlayed || 0)
+                                                            .toFixed(1)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div style={styles.conferenceHubMeta}>{teamName}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Rebound Leaders</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>RPG</div>
+                                <div style={styles.conferenceHubList}>
+                                    {playerLeaders.reb.map(({ player, teamName }, idx) => (
+                                        <div key={`${player.id}-rpg`} style={styles.conferenceHubListItem}>
+                                            <div style={styles.conferenceHubListItemRow}>
+                                                <div style={styles.conferenceHubListItemName}>
+                                                    {idx + 1}. {player.name} <span style={{ opacity: 0.75 }}>{player.position}</span>
+                                                </div>
+                                                <div style={styles.conferenceHubListItemValue}>
+                                                    <span style={styles.conferenceHubPill}>
+                                                        {playerLeaders
+                                                            .perGame(player.seasonStats?.rebounds || 0, player.seasonStats?.gamesPlayed || 0)
+                                                            .toFixed(1)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div style={styles.conferenceHubMeta}>{teamName}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Top Overall</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>OVR</div>
+                                <div style={styles.conferenceHubList}>
+                                    {playerLeaders.ovr.map(({ player, teamName }, idx) => (
+                                        <div key={`${player.id}-ovr`} style={styles.conferenceHubListItem}>
+                                            <div style={styles.conferenceHubListItemRow}>
+                                                <div style={styles.conferenceHubListItemName}>
+                                                    {idx + 1}. {player.name} <span style={{ opacity: 0.75 }}>{player.position}</span>
+                                                </div>
+                                                <div style={styles.conferenceHubListItemValue}>
+                                                    <span style={styles.conferenceHubPill}>OVR {player.overall}</span>
+                                                </div>
+                                            </div>
+                                            <div style={styles.conferenceHubMeta}>{teamName}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'recruits' && (
+                        <div style={styles.conferenceHubGridAuto}>
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Conference Commits</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>Committed to conference</div>
+                                <div style={styles.conferenceHubList}>
+                                    {conferenceCommits.length ? (
+                                        conferenceCommits.map(r => (
+                                            <div key={r.id} style={styles.conferenceHubListItem}>
+                                                <div style={styles.conferenceHubListItemRow}>
+                                                    <div style={styles.conferenceHubListItemName}>
+                                                        {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
+                                                    </div>
+                                                    <div style={styles.conferenceHubListItemValue}>
+                                                        <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                        {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
+                                                    </div>
+                                                </div>
+                                                <div style={styles.conferenceHubMeta}>{r.verbalCommitment}</div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div style={styles.conferenceHubEmpty}>No commits yet.</div>
+                                    )}
+                                </div>
+                            </section>
+
+                            <section style={styles.conferenceHubPanel}>
+                                <div style={styles.conferenceHubPanelTitle}>Top Available</div>
+                                <div style={styles.conferenceHubPanelSubTitle}>Uncommitted</div>
+                                <div style={styles.conferenceHubList}>
+                                    {topAvailableRecruits.map(r => (
+                                        <div key={`${r.id}-avail`} style={styles.conferenceHubListItem}>
+                                            <div style={styles.conferenceHubListItemRow}>
+                                                <div style={styles.conferenceHubListItemName}>
+                                                    {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
+                                                </div>
+                                                <div style={styles.conferenceHubListItemValue}>
+                                                    <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                    {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
+                                                </div>
+                                            </div>
+                                            <div style={styles.conferenceHubMeta}>
+                                                {r.hometownCity && r.hometownState ? `${r.hometownCity}, ${r.hometownState}` : r.highSchoolName || ''}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const Header = ({
+    state,
+    dispatch,
+    colors,
+    onHeaderClick,
+    onSponsorClick,
+    onCoachClick,
+    onConferenceClick,
+}: {
+    state: GameState;
+    dispatch: React.Dispatch<GameAction>;
+    colors: TeamColors;
+    onHeaderClick: () => void;
+    onSponsorClick: () => void;
+    onCoachClick: () => void;
+    onConferenceClick: () => void;
+}) => {
     if (!state.userTeam) return null;
     const formatSeason = (season: number) => `${2024 + season}-${(2025 + season) % 100}`;
 
@@ -5556,37 +6281,88 @@ const Header = ({ state, dispatch, colors, onHeaderClick, onSponsorClick, onCoac
     };
 
     const conferenceLabel = state.userTeam?.conference || 'Independent';
+    const conferenceLogoUrl = getConferenceLogoUrl(conferenceLabel);
+    const ncaaLogoUrl = getBrandLogoUrlByFileName('NCAA_logo.svg');
+    const sponsorLogoUrl = state.userTeam?.sponsor ? getSponsorLogoUrl(state.userTeam.sponsor.name) : undefined;
 
     return (
         <header style={{ ...styles.header, backgroundColor: colors.primary, color: colors.text, borderBottom: `4px solid ${colors.secondary}` }}>
             <div style={{ flex: 1, textAlign: 'left' }}>
                 <div style={{fontSize: '0.8rem', cursor: 'pointer'}} onClick={onHeaderClick} role="button" aria-label="Open settings">
-                    <h2 style={{fontSize: '1.2rem', marginBottom: '5px'}}>
-                      {state.userTeam.name} {getRankOrSeedInfo()}
+                    <h2 style={{ fontSize: '1.2rem', marginBottom: '5px' }}>
+                        {state.userTeam.name} {getRankOrSeedInfo()}
                     </h2>
                     <p>Record: {state.userTeam.record.wins}-{state.userTeam.record.losses} | Prestige: {state.userTeam.prestige}</p>
-                    <p style={{ marginTop: '2px', fontSize: '0.7rem', color: colors.text }}>
-                        Conference: {conferenceLabel}
-                    </p>
                 </div>
             </div>
-            <div style={{ flex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
-                {state.userTeam.sponsor && <SponsorDisplay sponsor={state.userTeam.sponsor} yearsRemaining={state.userTeam.sponsorContractYearsRemaining} onClick={onSponsorClick} />}
-                {state.coach?.contract && <button onClick={onCoachClick} style={styles.coachButton}>Coach</button>}
-            </div>
-            <div style={styles.logoBetween}>
+            {conferenceLogoUrl ? (
                 <button
                     type="button"
-                    style={styles.logoButton}
-                    onClick={handleLogoClick}
-                    title="Open NIL Retention Hub"
+                    style={styles.conferenceLogoButton}
+                    title={`Open ${conferenceLabel} hub`}
+                    aria-label={`Open ${conferenceLabel} hub`}
+                    onClick={onConferenceClick}
                 >
-                    <img
-                        src={`school logos/${schoolNameToSlug(state.userTeam.name)}`}
-                        alt={`${state.userTeam.name} logo`}
-                        style={styles.logoImage}
-                    />
+                    <div style={styles.conferenceLogoContainer}>
+                        <img
+                            src={conferenceLogoUrl}
+                            alt={conferenceLabel}
+                            style={styles.conferenceLogoImage}
+                        />
+                    </div>
                 </button>
+            ) : null}
+            <div style={{ flex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
+                {state.coach?.contract && (
+                    <button
+                        type="button"
+                        onClick={onCoachClick}
+                        style={styles.ncaaButton}
+                        title="Coach"
+                        aria-label="Coach"
+                    >
+                        {ncaaLogoUrl ? (
+                            <img
+                                src={ncaaLogoUrl}
+                                alt="NCAA"
+                                style={styles.ncaaLogoImage}
+                            />
+                        ) : (
+                            <span>Coach</span>
+                        )}
+                    </button>
+                )}
+            </div>
+            <div style={styles.logoBetween}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                        type="button"
+                        style={styles.logoButton}
+                        onClick={handleLogoClick}
+                        title="Open NIL Retention Hub"
+                    >
+                        <img
+                            src={`school logos/${schoolNameToSlug(state.userTeam.name)}`}
+                            alt={`${state.userTeam.name} logo`}
+                            style={styles.logoImage}
+                        />
+                    </button>
+                    {state.userTeam.sponsor && sponsorLogoUrl ? (
+                        <button
+                            type="button"
+                            onClick={onSponsorClick}
+                            style={styles.sponsorLogoButton}
+                            title={`${state.userTeam.sponsor.name} (${state.userTeam.sponsorContractYearsRemaining} YRS LEFT)`}
+                            aria-label="Open sponsor management"
+                        >
+                            <img
+                                src={sponsorLogoUrl}
+                                alt={state.userTeam.sponsor.name}
+                                style={styles.sponsorLogoImage}
+                            />
+                        </button>
+                    ) : null}
+                </div>
             </div>
             <div style={styles.headerRight}>
                 <div style={styles.seasonInfo}>
@@ -5597,7 +6373,17 @@ const Header = ({ state, dispatch, colors, onHeaderClick, onSponsorClick, onCoac
     );
 };
 
-const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch: React.Dispatch<GameAction>, colors: TeamColors }) => {
+const NavAndActions = ({
+    state,
+    dispatch,
+    colors,
+    onSimulationStateChange,
+}: {
+    state: GameState;
+    dispatch: React.Dispatch<GameAction>;
+    colors: TeamColors;
+    onSimulationStateChange?: (isSimulating: boolean) => void;
+}) => {
     const [isSimulatingSeason, setIsSimulatingSeason] = useState(false);
     const [isSimulatingTournament, setIsSimulatingTournament] = useState(false);
     const [isSimulatingToGame, setIsSimulatingToGame] = useState(false);
@@ -5619,6 +6405,10 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
         setIsSimulatingTournament(false);
         setIsSimulatingToGame(false);
     }, [state.season]); 
+
+    useEffect(() => {
+        onSimulationStateChange?.(isSimulatingSeason || isSimulatingToGame || isSimulatingTournament);
+    }, [isSimulatingSeason, isSimulatingToGame, isSimulatingTournament, onSimulationStateChange]);
 
     const seasonTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -5928,7 +6718,17 @@ const Subheading = ({ children, color }: SubheadingProps) => (
 );
 
 
-const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: TeamColors, dispatch: React.Dispatch<GameAction>}) => {
+const Dashboard = ({
+    state,
+    colors,
+    dispatch,
+    followCalendarDuringSim = false,
+}: {
+    state: GameState;
+    colors: TeamColors;
+    dispatch: React.Dispatch<GameAction>;
+    followCalendarDuringSim?: boolean;
+}) => {
     const isNBA = state.coach?.currentLeague === 'NBA';
     const currentTeam = isNBA ? state.nbaTeams.find(t => t.name === state.coach?.currentNBATeam) : state.userTeam;
     const [promoScheduling, setPromoScheduling] = useState<null | { week: number; opponent: string }>(null);
@@ -6223,6 +7023,18 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
                         getLogoSrc={(schoolName) => `school logos/${schoolNameToSlug(schoolName)}`}
                         getTeamColors={(schoolName) => SCHOOL_COLORS[schoolName] || { primary: '#C0C0C0', secondary: '#808080', text: '#FFFFFF' }}
                         onSelectHomeGame={({ week, opponent }) => setPromoScheduling({ week, opponent })}
+                        onViewGameLog={({ week, opponent, isHome }) => {
+                            const homeTeam = isHome ? state.userTeam.name : opponent;
+                            const awayTeam = isHome ? opponent : state.userTeam.name;
+                            const gameLog = state.gameLogs.find(log =>
+                                log.gameId === `S${state.season}G${week}-${homeTeam}v${awayTeam}` ||
+                                log.gameId === `S${state.season}G${week}-${awayTeam}v${homeTeam}`
+                            );
+                            if (gameLog) {
+                                dispatch({ type: 'VIEW_GAME_LOG', payload: { gameLog } });
+                            }
+                        }}
+                        followCurrentDate={followCalendarDuringSim}
                     />
                 </div>
             )}
@@ -7157,7 +7969,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                .filter(Boolean) as { name: string; score: number }[];
 	            if (!details.length) return;
 	            details.sort((a, b) => b.score - a.score);
-	            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10 });
+	            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) });
 	            const leader = shortlist[0]?.name || details[0]?.name;
 	            const second = shortlist[1]?.name || details[1]?.name;
 	            map.set(r.id, { leader, second });
@@ -7697,7 +8509,7 @@ const RecruitingAnalyticsModal = ({ recruits, allTeams, userTeam, gameInSeason, 
                 })
                 .filter(Boolean) as { name: string; score: number }[];
             if (!details.length) return 0;
-            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10 });
+            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) });
             return shortlist.length;
         }).filter(n => n > 0);
         const avgShortlist = shortlistSizes.length ? shortlistSizes.reduce((a, b) => a + b, 0) / shortlistSizes.length : 0;
@@ -10243,7 +11055,7 @@ const SettingsModal = ({
 		    const sortedRawOffers = [...rawOffers].sort((a, b) => b.score - a.score);
 		    const { shortlist, shares } = buildRecruitOfferShortlist(
 		        sortedRawOffers.map(o => ({ name: o.name, score: o.score })),
-		        { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature }
+		        { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(recruit) }
 		    );
 	    const shortlistNames = new Set(shortlist.map(o => o.name));
 	    const scoreLeaderName = shortlist[0]?.name ?? null;
@@ -11866,50 +12678,279 @@ const StaffRecruitmentModal = ({ dispatch }: { dispatch: React.Dispatch<GameActi
         }
     };
 
-    const renderCandidateGroup = (title: string, staffList: Staff[], selected: Staff[], role: StaffRole) => (
-        <div style={{ marginBottom: '15px' }}>
-            <h3 style={{ color: '#333', borderBottom: '2px solid #333', paddingBottom: '5px', marginBottom: '10px' }}>{title} ({selected.length}/3)</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {staffList.map(staff => (
-                    <div key={staff.id} style={{ ...styles.staffCard, cursor: 'pointer', outline: selected.some(s => s.id === staff.id) ? '3px solid #005BBB' : 'none' }} onClick={() => handleSelect(staff, role)}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h4 style={{ fontSize: '0.7rem' }}>{staff.name}</h4>
-                            <span style={styles.staffGrade}>Grade: {staff.grade}</span>
+    const selectedStaffAll = useMemo(
+        () => [...selectedAssistants, ...selectedTrainers, ...selectedScouts],
+        [selectedAssistants, selectedTrainers, selectedScouts],
+    );
+    const selectedSalaryTotal = useMemo(
+        () => selectedStaffAll.reduce((sum, staff) => sum + (staff.salary || 0), 0),
+        [selectedStaffAll],
+    );
+
+    const clearSelections = () => {
+        setSelectedAssistants([]);
+        setSelectedTrainers([]);
+        setSelectedScouts([]);
+    };
+
+    const staffModal = {
+        overlay: {
+            position: 'fixed' as const,
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+            padding: 'min(3vh, 18px) 10px',
+            boxSizing: 'border-box' as const,
+        },
+        window: {
+            width: 'min(1060px, 96vw)',
+            maxHeight: 'min(82vh, 760px)',
+            display: 'flex',
+            flexDirection: 'column' as const,
+            background: 'linear-gradient(180deg, #f7f8fa 0%, #eef2f7 100%)',
+            border: '4px solid #0b0f18',
+            boxShadow: '0 16px 0 rgba(0,0,0,0.35)',
+            borderRadius: 6,
+            overflow: 'hidden',
+        },
+        header: {
+            background: '#0b0f18',
+            color: '#fff',
+            padding: '10px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            borderBottom: '4px solid #2b3242',
+        },
+        headerTitle: {
+            fontFamily: "'Press Start 2P', cursive",
+            fontSize: '1rem',
+            letterSpacing: '0.5px',
+            lineHeight: 1.2,
+            margin: 0,
+            textShadow: '2px 2px 0 rgba(0,0,0,0.6)',
+        },
+        headerMeta: {
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap' as const,
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+        },
+        pill: (bg: string) => ({
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 10px',
+            background: bg,
+            border: '2px solid #0b0f18',
+            borderRadius: 999,
+            color: '#0b0f18',
+            fontFamily: "'Press Start 2P', cursive",
+            fontSize: '0.55rem',
+            whiteSpace: 'nowrap' as const,
+        }),
+        body: {
+            padding: 12,
+            display: 'flex',
+            flexDirection: 'column' as const,
+            gap: 10,
+            minHeight: 0,
+            flex: 1,
+        },
+        help: {
+            fontSize: '0.7rem',
+            color: '#1f2a3a',
+            margin: 0,
+            lineHeight: 1.35,
+            textAlign: 'center' as const,
+        },
+        grid: {
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 10,
+            flex: 1,
+            minHeight: 0,
+        },
+        panel: {
+            border: '3px solid #0b0f18',
+            borderRadius: 6,
+            background: '#ffffff',
+            overflow: 'hidden',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column' as const,
+        },
+        panelHeader: (accent: string) => ({
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            padding: '8px 10px',
+            background: accent,
+            color: '#0b0f18',
+            borderBottom: '3px solid #0b0f18',
+            fontFamily: "'Press Start 2P', cursive",
+            fontSize: '0.7rem',
+        }),
+        panelHeaderCount: {
+            background: '#ffffff',
+            border: '2px solid #0b0f18',
+            borderRadius: 999,
+            padding: '4px 8px',
+            fontSize: '0.55rem',
+        },
+        panelList: {
+            padding: 10,
+            display: 'flex',
+            flexDirection: 'column' as const,
+            gap: 8,
+            overflowY: 'auto' as const,
+            minHeight: 0,
+        },
+        card: (isSelected: boolean) => ({
+            background: isSelected ? '#fff3b0' : '#f6f7fb',
+            border: isSelected ? '3px solid #1b57ff' : '2px solid #0b0f18',
+            borderRadius: 6,
+            padding: 10,
+            cursor: 'pointer',
+            boxShadow: isSelected ? '0 0 0 2px #0b0f18 inset' : '0 2px 0 rgba(0,0,0,0.2)',
+            transition: 'transform 0.06s ease',
+        }),
+        cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+        cardName: { fontFamily: "'Press Start 2P', cursive", fontSize: '0.7rem', margin: 0, color: '#0b0f18' },
+        grade: {
+            fontFamily: "'Press Start 2P', cursive",
+            fontSize: '0.55rem',
+            padding: '4px 8px',
+            background: '#ffffff',
+            border: '2px solid #0b0f18',
+            borderRadius: 6,
+            whiteSpace: 'nowrap' as const,
+        },
+        cardDesc: { fontSize: '0.7rem', margin: '6px 0 0 0', color: '#223049', lineHeight: 1.25 },
+        cardSalary: { fontFamily: "'Press Start 2P', cursive", fontSize: '0.55rem', margin: '8px 0 0 0', textAlign: 'right' as const },
+        footer: {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            padding: 12,
+            borderTop: '4px solid #2b3242',
+            background: '#0b0f18',
+            flexWrap: 'wrap' as const,
+        },
+        button: (variant: 'neutral' | 'primary' | 'danger', disabled?: boolean) => {
+            const colors =
+                variant === 'primary'
+                    ? { bg: '#21c55d', fg: '#0b0f18' }
+                    : variant === 'danger'
+                        ? { bg: '#ff4d4d', fg: '#0b0f18' }
+                        : { bg: '#d7dde8', fg: '#0b0f18' };
+            return {
+                fontFamily: "'Press Start 2P', cursive",
+                fontSize: '0.65rem',
+                padding: '10px 12px',
+                borderRadius: 6,
+                border: '3px solid #0b0f18',
+                background: disabled ? '#9aa4b2' : colors.bg,
+                color: colors.fg,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 0 rgba(0,0,0,0.45)',
+                minWidth: 170,
+                textAlign: 'center' as const,
+            };
+        },
+        footerLeft: { display: 'flex', gap: 10, flexWrap: 'wrap' as const },
+        footerRight: { display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginLeft: 'auto' },
+    };
+
+    const renderCandidateGroup = (title: string, staffList: Staff[], selected: Staff[], role: StaffRole, accent: string) => (
+        <div style={staffModal.panel}>
+            <div style={staffModal.panelHeader(accent)}>
+                <span>{title}</span>
+                <span style={staffModal.panelHeaderCount}>{selected.length}/3</span>
+            </div>
+            <div style={staffModal.panelList}>
+                {staffList.map(staff => {
+                    const isSelected = selected.some(s => s.id === staff.id);
+                    return (
+                        <div
+                            key={staff.id}
+                            style={staffModal.card(isSelected)}
+                            onClick={() => handleSelect(staff, role)}
+                            onMouseDown={(e) => (e.currentTarget.style.transform = 'translateY(1px)')}
+                            onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(0px)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0px)')}
+                        >
+                            <div style={staffModal.cardTop}>
+                                <h4 style={staffModal.cardName}>{staff.name}</h4>
+                                <span style={staffModal.grade}>Grade: {staff.grade}</span>
+                            </div>
+                            <p style={staffModal.cardDesc}>{staff.description}</p>
+                            <p style={staffModal.cardSalary}>Salary: {formatCurrency(staff.salary)}</p>
                         </div>
-                        <p style={{ fontSize: '0.6rem', fontStyle: 'italic', margin: '5px 0' }}>{staff.description}</p>
-                        <p style={{ fontSize: '0.6rem', textAlign: 'right' }}>Salary: {formatCurrency(staff.salary)}</p>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
 
     return (
-        <div style={styles.modalOverlay}>
-            <div style={styles.modalContent}>
-                <h2 style={{ ...styles.title, fontSize: '1.5rem', textShadow: '2px 2px 0px #808080', color: 'black' }}>
-                    Assemble Your Staff
-                </h2>
-                <p style={{ textAlign: 'center', marginBottom: '20px', fontSize: '0.8rem', color: '#000000' }}>
-                    Your first order of business is to hire your coaching staff. You can hire up to 3 members for each role.
-                </p>
-                <p style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: '10px'}}>Total Selected: {totalSelected} / 9</p>
-                <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: '10px' }}>
-                    {renderCandidateGroup('Assistant Coach', candidates.assistants, selectedAssistants, 'Assistant Coach')}
-                    {renderCandidateGroup('Trainer', candidates.trainers, selectedTrainers, 'Trainer')}
-                    {renderCandidateGroup('Scout', candidates.scouts, selectedScouts, 'Scout')}
+        <div style={staffModal.overlay}>
+            <div style={staffModal.window}>
+                <div style={staffModal.header}>
+                    <h2 style={staffModal.headerTitle}>Assemble Your Staff</h2>
+                    <div style={staffModal.headerMeta}>
+                        <span style={staffModal.pill('#ffe08a')}>Selected: {totalSelected}/9</span>
+                        <span style={staffModal.pill('#a7f3d0')}>Payroll: {formatCurrency(selectedSalaryTotal)}</span>
+                        <button
+                            style={staffModal.button('danger', totalSelected === 0)}
+                            onClick={clearSelections}
+                            disabled={totalSelected === 0}
+                            title="Clear all selections"
+                        >
+                            Clear All
+                        </button>
+                    </div>
                 </div>
-                <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '20px'}}>
-                    <button style={{ ...styles.button }} onClick={handleRefreshCandidates}>
-                        Refresh Candidates
-                    </button>
-                    <button style={{ ...styles.button }} onClick={handleRandomStaff}>
-                        Random Staff
-                    </button>
+
+                <div style={staffModal.body}>
+                    <p style={staffModal.help}>
+                        Pick up to <strong>3</strong> per role. Click a card to select/deselect.
+                    </p>
+
+                    <div style={staffModal.grid}>
+                        {renderCandidateGroup('Assistant', candidates.assistants, selectedAssistants, 'Assistant Coach', '#8bd3ff')}
+                        {renderCandidateGroup('Trainer', candidates.trainers, selectedTrainers, 'Trainer', '#a7f3d0')}
+                        {renderCandidateGroup('Scout', candidates.scouts, selectedScouts, 'Scout', '#d8b4fe')}
+                    </div>
                 </div>
-                <button style={{ ...styles.button, width: '100%', marginTop: '20px' }} onClick={handleHire} disabled={totalSelected === 0}>
-                    Finalize Staff
-                </button>
+
+                <div style={staffModal.footer}>
+                    <div style={staffModal.footerLeft}>
+                        <button style={staffModal.button('neutral')} onClick={handleRefreshCandidates} title="Reroll candidates">
+                            Refresh Candidates
+                        </button>
+                        <button style={staffModal.button('neutral')} onClick={handleRandomStaff} title="Auto-pick up to 3 per role">
+                            Random Staff
+                        </button>
+                    </div>
+                    <div style={staffModal.footerRight}>
+                        <button
+                            style={staffModal.button('primary', totalSelected === 0)}
+                            onClick={handleHire}
+                            disabled={totalSelected === 0}
+                            title={totalSelected === 0 ? 'Select at least one staff member' : 'Hire selected staff'}
+                        >
+                            Finalize Staff
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -12711,6 +13752,8 @@ export default function App() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSponsorModalOpen, setIsSponsorModalOpen] = useState(false);
+  const [isConferenceHubOpen, setIsConferenceHubOpen] = useState(false);
+  const [followCalendarDuringSim, setFollowCalendarDuringSim] = useState(false);
   useEffect(() => {
       if (
           state.status === GameStatus.DASHBOARD &&
@@ -12877,10 +13920,13 @@ export default function App() {
     ? SCHOOL_COLORS[state.userTeam.name] 
     : {primary: '#333', secondary: '#666', text: '#fff'};
 
+  const conferenceLabelForHub = state.userTeam?.conference || 'Independent';
+  const conferenceLogoUrlForHub = getConferenceLogoUrl(conferenceLabelForHub);
+
   const renderContent = () => {
     switch (state.status) {
     case GameStatus.DASHBOARD:
-      return <Dashboard state={state} colors={teamColors} dispatch={dispatch} />;
+      return <Dashboard state={state} colors={teamColors} dispatch={dispatch} followCalendarDuringSim={followCalendarDuringSim} />;
     case GameStatus.NBA_DASHBOARD:
       return <NBADashboard state={state} dispatch={dispatch} />;
     case GameStatus.ROSTER:
@@ -12954,6 +14000,18 @@ export default function App() {
 
   return (
     <div style={styles.app}>
+      {isConferenceHubOpen && state.userTeam && conferenceLabelForHub !== 'Independent' && (
+        <ConferenceHubModal
+          state={state}
+          conferenceLabel={conferenceLabelForHub}
+          conferenceLogoUrl={conferenceLogoUrlForHub}
+          onClose={() => setIsConferenceHubOpen(false)}
+          onOpenStandings={() => {
+            setIsConferenceHubOpen(false);
+            dispatch({ type: 'CHANGE_VIEW', payload: GameStatus.STANDINGS });
+          }}
+        />
+      )}
       {state.toastMessage && (
           <Toast message={state.toastMessage} onDismiss={() => dispatch({ type: 'SET_TOAST', payload: null })} />
       )}
@@ -13008,13 +14066,6 @@ export default function App() {
             onDecline={handleDeclineStaffRenewal}
         />
       )}
-
-      {state.selectedGameLog && (
-        <BoxScoreModal
-            boxScore={state.selectedGameLog}
-            onClose={() => dispatch({ type: 'CLOSE_GAME_LOG' })}
-        />
-      )}
       
     <Header
         state={state}
@@ -13023,9 +14074,15 @@ export default function App() {
         onHeaderClick={() => setIsSettingsOpen(true)}
         onSponsorClick={() => state.userTeam && setIsSponsorModalOpen(true)}
         onCoachClick={() => setIsCoachModalOpen(true)}
+        onConferenceClick={() => setIsConferenceHubOpen(true)}
     />
     <main style={styles.mainContentArea}>
-        <NavAndActions state={state} dispatch={dispatch} colors={teamColors} />
+        <NavAndActions
+            state={state}
+            dispatch={dispatch}
+            colors={teamColors}
+            onSimulationStateChange={setFollowCalendarDuringSim}
+        />
         <div style={{...styles.content, border: `4px solid ${teamColors.primary}`}}>
             {renderContent()}
         </div>
@@ -13091,10 +14148,43 @@ const styles: { [key: string]: React.CSSProperties } = {
         textAlign: 'right',
         fontSize: '0.8rem',
     },
+    conferenceLogoContainer: {
+        flex: '0 0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 8px',
+        minWidth: '110px',
+    } as React.CSSProperties,
+    conferenceLogoButton: {
+        border: 'none',
+        backgroundColor: 'transparent',
+        cursor: 'pointer',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100px',
+        width: '110px',
+    } as React.CSSProperties,
+    conferenceLogoImage: {
+        maxHeight: '96px',
+        maxWidth: '96px',
+        height: 'auto',
+        width: 'auto',
+        objectFit: 'contain',
+        mixBlendMode: 'normal',
+        filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.35))',
+    } as React.CSSProperties,
+    conferenceFallbackText: {
+        fontSize: '0.75rem',
+        opacity: 0.9,
+        whiteSpace: 'nowrap',
+    } as React.CSSProperties,
     logoBetween: {
-        width: '90px',
+        width: '180px',
         height: '90px',
-        flex: '0 0 90px',
+        flex: '0 0 180px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -13114,6 +14204,43 @@ const styles: { [key: string]: React.CSSProperties } = {
         maxHeight: '80px',
         maxWidth: '80px',
         objectFit: 'contain',
+    },
+    sponsorLogoButton: {
+        border: 'none',
+        backgroundColor: 'transparent',
+        cursor: 'pointer',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '80px',
+        height: '80px',
+    },
+    sponsorLogoImage: {
+        maxHeight: '80px',
+        maxWidth: '80px',
+        objectFit: 'contain',
+        filter: 'brightness(0) invert(1)',
+        opacity: 0.95,
+    },
+    ncaaButton: {
+        border: 'none',
+        backgroundColor: 'transparent',
+        cursor: 'pointer',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '80px',
+        height: '80px',
+    },
+    ncaaLogoImage: {
+        maxHeight: '80px',
+        maxWidth: '80px',
+        height: 'auto',
+        width: 'auto',
+        objectFit: 'contain',
+        opacity: 1,
     },
     coachButton: {
       fontFamily: "'Press Start 2P', cursive",
@@ -13803,6 +14930,18 @@ const styles: { [key: string]: React.CSSProperties } = {
         justifyContent: 'center',
         zIndex: 1000,
     },
+    conferenceHubOverlay: {
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        backgroundColor: 'rgba(15,23,42,0.80)',
+        backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 1px, transparent 1px, transparent 3px)',
+    } as React.CSSProperties,
     modalContent: {
         backgroundColor: '#C0C0C0',
         padding: '20px',
@@ -13826,6 +14965,400 @@ const styles: { [key: string]: React.CSSProperties } = {
         height: '25px',
         cursor: 'pointer',
     },
+    conferenceHubModalContent: {
+        width: '100%',
+        maxWidth: '1560px',
+        maxHeight: '95vh',
+        background: '#f8fafc',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        boxShadow: '10px 10px 0 #0f172a',
+        border: '4px solid #0f172a',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+    } as React.CSSProperties,
+    conferenceHubCloseButton: {
+        position: 'absolute',
+        top: '10px',
+        right: '10px',
+        fontFamily: "'Press Start 2P', cursive",
+        backgroundColor: '#fde047',
+        border: '2px solid #0f172a',
+        width: '30px',
+        height: '30px',
+        cursor: 'pointer',
+        boxShadow: '2px 2px 0 #0f172a',
+    } as React.CSSProperties,
+    conferenceHubHeader: {
+        padding: '16px 18px',
+        borderBottom: '4px solid #0f172a',
+        background: '#e2e8f0',
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '14px',
+    } as React.CSSProperties,
+    conferenceHubLogo: {
+        maxHeight: '72px',
+        maxWidth: '220px',
+        objectFit: 'contain',
+        mixBlendMode: 'normal',
+        filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.35))',
+    } as React.CSSProperties,
+    conferenceHubHeaderText: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        flex: 1,
+        minWidth: 0,
+    } as React.CSSProperties,
+    conferenceHubTitle: {
+        fontSize: '1.05rem',
+        lineHeight: 1.15,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+    } as React.CSSProperties,
+    conferenceHubSubtitle: {
+        fontSize: '0.6rem',
+        opacity: 0.85,
+    } as React.CSSProperties,
+    conferenceHubHeaderActions: {
+        display: 'flex',
+        gap: '8px',
+        alignItems: 'center',
+    } as React.CSSProperties,
+    conferenceHubSelectLabel: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '0.55rem',
+        fontWeight: 900,
+        color: '#0f172a',
+        whiteSpace: 'nowrap',
+    } as React.CSSProperties,
+    conferenceHubSelect: {
+        fontFamily: "'Press Start 2P', cursive",
+        fontSize: '0.55rem',
+        padding: '8px 10px',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        background: '#ffffff',
+        color: '#0f172a',
+        boxShadow: '2px 2px 0 rgba(15,23,42,0.35)',
+        cursor: 'pointer',
+        maxWidth: '240px',
+    } as React.CSSProperties,
+    conferenceHubActionButton: {
+        fontFamily: "'Press Start 2P', cursive",
+        fontSize: '0.55rem',
+        padding: '8px 10px',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        background: '#fde047',
+        color: '#0f172a',
+        boxShadow: '2px 2px 0 #0f172a',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+    } as React.CSSProperties,
+    conferenceHubHeaderStatsRow: {
+        marginTop: '10px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px',
+    } as React.CSSProperties,
+    conferenceHubStatPill: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        boxShadow: '2px 2px 0 #0f172a',
+        fontWeight: 900,
+        fontSize: '0.55rem',
+        whiteSpace: 'nowrap',
+    } as React.CSSProperties,
+    conferenceHubStatLabel: {
+        fontSize: '0.45rem',
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        opacity: 0.85,
+    } as React.CSSProperties,
+    conferenceHubStatValue: {
+        fontSize: '0.6rem',
+        fontWeight: 900,
+    } as React.CSSProperties,
+    conferenceHubStatPillDark: {
+        background: '#111827',
+        color: '#ffffff',
+    } as React.CSSProperties,
+    conferenceHubStatPillBlue: {
+        background: '#dbeafe',
+        color: '#1d4ed8',
+    } as React.CSSProperties,
+    conferenceHubStatPillGreen: {
+        background: '#dcfce7',
+        color: '#166534',
+    } as React.CSSProperties,
+    conferenceHubStatPillAmber: {
+        background: '#fff7ed',
+        color: '#9a3412',
+    } as React.CSSProperties,
+    conferenceHubStatPillPurple: {
+        background: '#f5f3ff',
+        color: '#5b21b6',
+    } as React.CSSProperties,
+    conferenceHubTabs: {
+        display: 'flex',
+        gap: '8px',
+        flexWrap: 'wrap',
+        padding: '12px 18px 0',
+        marginBottom: '12px',
+    } as React.CSSProperties,
+    conferenceHubTabButton: {
+        fontFamily: "'Press Start 2P', cursive",
+        fontSize: '0.6rem',
+        padding: '8px 10px',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        background: '#ffffff',
+        color: '#0f172a',
+        boxShadow: '2px 2px 0 rgba(15,23,42,0.35)',
+        cursor: 'pointer',
+    } as React.CSSProperties,
+    conferenceHubTabButtonActive: {
+        background: '#fde047',
+        color: '#0f172a',
+        boxShadow: '2px 2px 0 #0f172a',
+    } as React.CSSProperties,
+    conferenceHubBody: {
+        flex: 1,
+        overflowY: 'auto',
+        padding: '0 18px 18px',
+    } as React.CSSProperties,
+    conferenceHubGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '12px',
+    } as React.CSSProperties,
+    conferenceHubGridAuto: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '12px',
+    } as React.CSSProperties,
+    conferenceHubPanel: {
+        background: '#f8fafc',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        boxShadow: '4px 4px 0 #0f172a',
+        padding: '10px',
+        minHeight: '260px',
+    } as React.CSSProperties,
+    conferenceHubPanelTitle: {
+        fontSize: '0.65rem',
+        marginBottom: '10px',
+        padding: '8px 10px',
+        borderRadius: '6px',
+        background: '#111827',
+        color: '#ffffff',
+        border: '2px solid #0f172a',
+        boxShadow: '2px 2px 0 #0f172a',
+    } as React.CSSProperties,
+    conferenceHubPanelSubTitle: {
+        fontSize: '0.5rem',
+        opacity: 0.85,
+        marginBottom: '6px',
+    } as React.CSSProperties,
+    conferenceHubTable: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        fontSize: '0.5rem',
+    } as React.CSSProperties,
+    conferenceHubTableScroll: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        fontSize: '0.5rem',
+        maxHeight: '260px',
+        overflowY: 'auto',
+        paddingRight: '6px',
+    } as React.CSSProperties,
+    conferenceStandingsHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '10px',
+        padding: '10px 10px',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        background: '#e2e8f0',
+        boxShadow: '2px 2px 0 #0f172a',
+        fontSize: '0.55rem',
+        fontWeight: 900,
+        marginBottom: '10px',
+    } as React.CSSProperties,
+    conferenceStandingsScroll: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        overflowY: 'auto',
+        maxHeight: 'calc(95vh - 340px)',
+        paddingRight: '6px',
+    } as React.CSSProperties,
+    conferenceStandingsRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '10px',
+        padding: '12px 12px',
+        borderRadius: '8px',
+        border: '2px solid #0f172a',
+        background: '#ffffff',
+        boxShadow: '4px 4px 0 #0f172a',
+    } as React.CSSProperties,
+    conferenceStandingsRowUser: {
+        background: '#eff6ff',
+        borderColor: '#1d4ed8',
+        boxShadow: '4px 4px 0 #1d4ed8',
+    } as React.CSSProperties,
+    conferenceStandingsRowLeader: {
+        background: '#ecfdf5',
+        borderColor: '#16a34a',
+        boxShadow: '4px 4px 0 #16a34a',
+    } as React.CSSProperties,
+    conferenceStandingsTeamCell: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        minWidth: 0,
+        flex: 1,
+    } as React.CSSProperties,
+    conferenceStandingsRank: {
+        fontSize: '0.7rem',
+        fontWeight: 900,
+        width: '38px',
+        textAlign: 'right',
+        opacity: 0.9,
+    } as React.CSSProperties,
+    conferenceStandingsTeamLogo: {
+        width: '46px',
+        height: '46px',
+        objectFit: 'contain',
+        filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.25))',
+    } as React.CSSProperties,
+    conferenceStandingsTeamName: {
+        fontSize: '0.65rem',
+        fontWeight: 900,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+    } as React.CSSProperties,
+    conferenceStandingsStatCell: {
+        width: '70px',
+        textAlign: 'right',
+        fontSize: '0.65rem',
+        fontWeight: 900,
+    } as React.CSSProperties,
+    conferenceHubRow: {
+        display: 'flex',
+        gap: '8px',
+        padding: '6px 6px',
+        border: '1px solid rgba(15,23,42,0.18)',
+        alignItems: 'center',
+    } as React.CSSProperties,
+    conferenceHubRowHighlight: {
+        borderColor: '#111827',
+        boxShadow: 'inset 0 0 0 2px rgba(17, 24, 39, 0.7)',
+    } as React.CSSProperties,
+    conferenceHubHeaderRow: {
+        backgroundColor: '#e2e8f0',
+        fontWeight: 'bold',
+        borderColor: 'rgba(15,23,42,0.35)',
+    } as React.CSSProperties,
+    conferenceHubList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        fontSize: '0.55rem',
+    } as React.CSSProperties,
+    conferenceHubListItem: {
+        borderRadius: '6px',
+        border: '2px solid rgba(15,23,42,0.35)',
+        backgroundColor: '#ffffff',
+        padding: '8px 8px',
+    } as React.CSSProperties,
+    conferenceHubListItemRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: '8px',
+        alignItems: 'center',
+    } as React.CSSProperties,
+    conferenceHubListItemName: {
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        flex: '1 1 auto',
+        minWidth: 0,
+    } as React.CSSProperties,
+    conferenceHubListItemValue: {
+        whiteSpace: 'nowrap',
+        flex: '0 0 auto',
+    } as React.CSSProperties,
+    conferenceHubCardGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gap: '10px',
+    } as React.CSSProperties,
+    conferenceHubCard: {
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        backgroundColor: '#ffffff',
+        boxShadow: '2px 2px 0 #0f172a',
+        padding: '8px',
+        minHeight: '54px',
+    } as React.CSSProperties,
+    conferenceHubCardLabel: {
+        fontSize: '0.45rem',
+        opacity: 0.85,
+        marginBottom: '6px',
+    } as React.CSSProperties,
+    conferenceHubCardValue: {
+        fontSize: '0.75rem',
+        lineHeight: 1.1,
+    } as React.CSSProperties,
+    conferenceHubCardValueSmall: {
+        fontSize: '0.55rem',
+        lineHeight: 1.1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+    } as React.CSSProperties,
+    conferenceHubMeta: {
+        marginTop: '6px',
+        fontSize: '0.45rem',
+        opacity: 0.8,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+    } as React.CSSProperties,
+    conferenceHubPill: {
+        display: 'inline-block',
+        border: '2px solid #0f172a',
+        backgroundColor: '#ffffff',
+        padding: '2px 4px',
+        marginLeft: '6px',
+        fontSize: '0.45rem',
+        lineHeight: 1,
+    } as React.CSSProperties,
+    conferenceHubEmpty: {
+        fontSize: '0.55rem',
+        opacity: 0.85,
+        padding: '8px 6px',
+    } as React.CSSProperties,
     slotContainer: {
         display: 'flex',
         justifyContent: 'space-between',
