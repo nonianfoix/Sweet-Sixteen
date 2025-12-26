@@ -80,7 +80,7 @@ const EventsTab: React.FC<EventsTabProps> = ({ state, userTeam, dispatch, colors
         } as React.CSSProperties,
         select: {
             padding: '0.5rem',
-            fontFamily: 'inherit',
+            fontFamily: "'Press Start 2P', 'Courier New', system-ui, sans-serif",
             fontSize: '0.7rem',
             width: '100%',
             marginBottom: '0.5rem',

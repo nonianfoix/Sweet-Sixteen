@@ -46,6 +46,7 @@ export const DashboardScheduleCalendar = ({
     currentWeek,
     getLogoSrc,
     getTeamColors,
+    onSelectHomeGame,
 }: {
     userTeamName: string;
     userTeamColors: TeamColors;
@@ -55,6 +56,7 @@ export const DashboardScheduleCalendar = ({
     currentWeek: number;
     getLogoSrc: (schoolName: string) => string;
     getTeamColors: (schoolName: string) => TeamColors;
+    onSelectHomeGame?: (info: { week: number; date: ISODate; opponent: string }) => void;
 }) => {
     const currentJsDate = useMemo(() => isoToJsDateUTC(currentDate), [currentDate]);
 
@@ -169,12 +171,11 @@ export const DashboardScheduleCalendar = ({
                     const isToday = makeDateKey(currentJsDate) === key;
                     const isCurrentWeek = userGame?.week === currentWeek;
 
-                    const colorsForCell = userGame
-                        ? (userGame.isHome ? userTeamColors : getTeamColors(userGame.opponent))
-                        : null;
-
-                    const accent = colorsForCell?.primary || userTeamColors.primary;
-                    const baseBg = userGame ? hexToRgba(accent, 0.8) : surfaceBg;
+                    const opponentColors = userGame ? getTeamColors(userGame.opponent) : null;
+                    const accent = opponentColors?.primary || userTeamColors.primary;
+                    const baseBg = userGame
+                        ? (userGame.isHome ? '#F0DCC4' : hexToRgba(accent, 0.8))
+                        : surfaceBg;
 
                     const border = isCurrentWeek
                         ? `2px solid ${accentBorder}`
@@ -182,12 +183,33 @@ export const DashboardScheduleCalendar = ({
                             ? `2px solid ${todayBorder}`
                             : `1px solid ${cardBorder}`;
 
+                    const dateBadgeBg = userGame ? accent : 'transparent';
+                    const dateBadgeColor = userGame ? '#ffffff' : ink;
+
                     const matchupLabel = userGame ? `${userGame.isHome ? 'vs' : '@'} ${userGame.opponent}` : '';
                     const logoOpacity = userGame ? (userGame.played ? 0.40 : 0.62) : 0;
+                    const canClickHomeGame =
+                        !!userGame?.isHome &&
+                        !userGame.played &&
+                        userGame.week >= currentWeek &&
+                        typeof onSelectHomeGame === 'function';
 
                     return (
                         <div
                             key={cell.key}
+                            role={canClickHomeGame ? 'button' : undefined}
+                            tabIndex={canClickHomeGame ? 0 : undefined}
+                            onClick={() => {
+                                if (!canClickHomeGame || !userGame) return;
+                                onSelectHomeGame?.({ week: userGame.week, date: userGame.date, opponent: userGame.opponent });
+                            }}
+                            onKeyDown={(e) => {
+                                if (!canClickHomeGame || !userGame) return;
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    onSelectHomeGame?.({ week: userGame.week, date: userGame.date, opponent: userGame.opponent });
+                                }
+                            }}
                             style={{
                                 height: 60,
                                 borderRadius: 10,
@@ -199,6 +221,7 @@ export const DashboardScheduleCalendar = ({
                                 flexDirection: 'column',
                                 justifyContent: 'space-between',
                                 padding: 6,
+                                cursor: canClickHomeGame ? 'pointer' : 'default',
                             }}
                             title={userGame ? `${MONTH_LABELS[viewMonth]} ${cell.date.getUTCDate()}, ${viewYear} — ${matchupLabel}` : `${MONTH_LABELS[viewMonth]} ${cell.date.getUTCDate()}, ${viewYear}`}
                         >
@@ -231,7 +254,17 @@ export const DashboardScheduleCalendar = ({
                                 />
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', position: 'relative', zIndex: 3 }}>
-                                <div style={{ color: ink, fontSize: 12, fontWeight: 900 }}>
+                                <div style={{
+                                    color: dateBadgeColor,
+                                    background: dateBadgeBg,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    borderRadius: 6,
+                                    padding: '2px 6px',
+                                    minWidth: 20,
+                                    textAlign: 'center',
+                                    boxShadow: userGame ? '0 1px 0 rgba(15,23,42,0.25)' : 'none',
+                                }}>
                                     {cell.date.getUTCDate()}
                                 </div>
                                 {userGame && (

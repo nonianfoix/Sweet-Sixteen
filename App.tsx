@@ -73,14 +73,16 @@ import type {
   NBAPlayoffs,
   GameAdjustment,
   Loan,
-  MarketingCampaign,
-  NilNegotiationStatus
-} from './types';
+	  MarketingCampaign,
+	  NilNegotiationStatus,
+	  OfferPitchType
+	} from './types';
 import { GameStatus, ScheduledEventStatus, EventType, GameEvent } from './types';
+import RecruitOfferDetailsModal from './components/RecruitOfferDetailsModal';
 import * as constants from './constants';
 import type { SponsorName } from './types';
 // FIX: Added missing function imports from gameService. This resolves multiple "has no exported member" errors.
-import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './services/gameService';
+import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule, generateRecruitRelationships, recomputeRecruitBoardRanks, applyPackageDealOfferMirroring } from './services/gameService';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './services/draftUtils';
 import { ensurePlayerNilProfile, buildNilNegotiationCandidates, evaluateNilOffer, calculateTeamNilBudget } from './services/nilService';
 import { generateAlumni, updateAlumniRegistry } from './services/alumniService';
@@ -1331,6 +1333,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 completedQuests: [],
                 eventFeed: [],
             },
+            recruits: loadedState.recruits ? recomputeRecruitBoardRanks(loadedState.recruits) : loadedState.recruits,
             lastSimWeekKey: loadedState.lastSimWeekKey ?? null,
             customDraftPickRules: loadedState.customDraftPickRules ?? [],
         };
@@ -2056,9 +2059,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const userTeamGameForWeek = updatedSchedule[state.gameInSeason - 1]?.find(
           g => g.homeTeam === state.userTeam?.name || g.awayTeam === state.userTeam?.name
       );
+      let userTeamWonThisWeek: boolean | null = null;
       if (userTeamGameForWeek && userTeamGameForWeek.played && state.userTeam) {
           const userTeamWon = (userTeamGameForWeek.homeTeam === state.userTeam.name && userTeamGameForWeek.homeScore > userTeamGameForWeek.awayScore) ||
                               (userTeamGameForWeek.awayTeam === state.userTeam.name && userTeamGameForWeek.awayScore > userTeamGameForWeek.homeScore);
+          userTeamWonThisWeek = userTeamWon;
           const opponentName = userTeamGameForWeek.homeTeam === state.userTeam.name ? userTeamGameForWeek.awayTeam : userTeamGameForWeek.homeTeam;
           const opponentTeam = state.allTeams.find(t => t.name === opponentName);
           const isRivalryGame = (state.userTeam.conference === opponentTeam?.conference); // Simplified rivalry check
@@ -2115,6 +2120,30 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       let newUserTeam = updatedAllTeams.find((t:Team) => t.isUserTeam) || null;
+
+      if (newUserTeam && state.userTeam) {
+          const userTeamName = state.userTeam.name;
+          updatedRecruits = updatedRecruits.map(r => {
+              if (r.verbalCommitment && r.verbalCommitment !== userTeamName) return r;
+              if (r.declinedOffers?.includes(userTeamName)) return r;
+
+              const weeksSinceTouch = r.lastUserContactWeek != null ? Math.max(0, state.week - r.lastUserContactWeek) : 99;
+              let decay = 0;
+              if (weeksSinceTouch >= 2) {
+                  decay = r.userHasOffered ? 1 : 2;
+                  if (weeksSinceTouch >= 5) decay += 1;
+              }
+
+              let idleBoost = 0;
+              if (userTeamWonThisWeek) idleBoost += randomBetween(0, 1);
+              if (newUserTeam.prestige >= 85 && Math.random() < 0.25) idleBoost += 1;
+              if (newUserTeam.record?.wins >= 22 && Math.random() < 0.2) idleBoost += 1;
+
+              if (decay === 0 && idleBoost === 0) return r;
+              const nextInterest = clamp(Math.round(r.interest - decay + idleBoost), 0, 100);
+              return nextInterest === r.interest ? r : { ...r, interest: nextInterest };
+          });
+      }
       const newFreeAgentStaff = generateFreeAgentStaff();
       const autoTrainingEvents: string[] = [];
 
@@ -2984,7 +3013,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const contactPoints = getContactPoints(state.userTeam);
       if (!state.userTeam || state.contactsMadeThisWeek >= contactPoints) return state;
 
-      const financialCost = RECRUITING_COSTS.CONTACT;
+      const targetRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
+      const isMaintainContact = !!targetRecruit?.userHasOffered;
+      const financialCost = isMaintainContact ? Math.max(1, Math.round(RECRUITING_COSTS.CONTACT * 0.5)) : RECRUITING_COSTS.CONTACT;
       if ((state.userTeam.budget?.cash || 0) < financialCost) {
            return { ...state, toastMessage: 'Insufficient funds to contact recruit.' };
       }
@@ -3003,7 +3034,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                       date: `Week ${state.week}`,
                       week: state.week,
                       season: state.season,
-                      description: 'Recruiting: Contact Recruit',
+                      description: isMaintainContact ? 'Recruiting: Maintain Contact' : 'Recruiting: Contact Recruit',
                       category: 'Expense' as 'Expense',
                       amount: -financialCost,
                       runningBalance: (state.userTeam.budget?.cash || 0) - financialCost
@@ -3016,24 +3047,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         userTeam: updatedUserTeam,
         allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
-        recruits: state.recruits.map(r => {
-          if (r.id !== action.payload.recruitId) return r;
-          const baseline = calculateRecruitInterestScore(r, state.userTeam!, { gameInSeason: state.gameInSeason });
-          const difference = baseline - r.interest;
-          let boost: number;
-          const urgencyMultiplier = 0.6 + Math.max(0, 100 - r.interest) / 120;
-          if (difference > 0) {
-            boost = Math.min(6, Math.max(2, difference * 0.33)) * urgencyMultiplier;
-          } else {
-            const aboveBaseline = Math.abs(difference);
-            boost = Math.max(1, 2 - aboveBaseline / 30) * urgencyMultiplier;
-          }
-          const newInterest = Math.min(100, Math.round(r.interest + boost));
-          return { ...r, interest: newInterest };
-        }),
-        contactsMadeThisWeek: state.contactsMadeThisWeek + 1,
-      };
-    }
+	        recruits: state.recruits.map(r => {
+	          if (r.id !== action.payload.recruitId) return r;
+	          const baseline = calculateRecruitInterestScore(r, state.userTeam!, { gameInSeason: state.gameInSeason });
+	          const difference = baseline - r.interest;
+	          let boost: number;
+	          const urgencyMultiplier = 0.6 + Math.max(0, 100 - r.interest) / 120;
+	          const coachabilityMultiplier = 0.85 + clamp((r.coachability ?? 60) / 220, 0, 0.7);
+	          const maintainMultiplier = r.userHasOffered ? 0.55 : 1;
+	          if (difference > 0) {
+	            boost = Math.min(6, Math.max(2, difference * 0.33)) * urgencyMultiplier * coachabilityMultiplier * maintainMultiplier;
+	          } else {
+	            const aboveBaseline = Math.abs(difference);
+	            boost = Math.max(1, 2 - aboveBaseline / 30) * urgencyMultiplier * coachabilityMultiplier * maintainMultiplier;
+	          }
+	          const newInterest = Math.min(100, Math.round(r.interest + boost));
+	          const teamName = state.userTeam!.name;
+	          const teamMomentum = { ...(r.teamMomentum || {}) };
+	          teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 2, -20, 20);
+	          return { ...r, interest: newInterest, teamMomentum, lastUserContactWeek: state.week };
+	        }),
+	        contactsMadeThisWeek: state.contactsMadeThisWeek + 1,
+	      };
+	    }
     case 'COACH_VISIT': {
         if (!state.userTeam) return state;
         const visitCost = 5;
@@ -3077,17 +3113,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ...state,
             userTeam: updatedUserTeam,
             allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
-            recruits: state.recruits.map(r => {
-                if (r.id !== action.payload.recruitId) return r;
-                const prestigeBonus = Math.max(0, Math.floor((state.userTeam?.prestige || 50 - 50) / 12));
-                const boost = randomBetween(18, 25) + prestigeBonus;
-                const newInterest = Math.min(100, r.interest + boost);
-                return { ...r, interest: newInterest };
-            }),
-            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
-            toastMessage: `Home visit complete. (-$${financialCost})`,
-        };
-    }
+		            recruits: state.recruits.map(r => {
+		                if (r.id !== action.payload.recruitId) return r;
+		                const prestigeBonus = Math.max(0, Math.floor((state.userTeam?.prestige || 50 - 50) / 12));
+		                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
+		                const boost = (randomBetween(18, 25) + prestigeBonus) * coachabilityMultiplier;
+		                const newInterest = Math.min(100, r.interest + boost);
+		                const teamName = state.userTeam!.name;
+		                const teamMomentum = { ...(r.teamMomentum || {}) };
+		                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 4, -20, 20);
+		                const visitHistory = [...(r.visitHistory || [])];
+		                visitHistory.push({ teamName, week: state.week, kind: 'Home', outcome: 'Positive' });
+		                return { ...r, interest: newInterest, teamMomentum, visitHistory, lastUserContactWeek: state.week };
+		            }),
+	            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
+	            toastMessage: `Home visit complete. (-$${financialCost})`,
+	        };
+	    }
     case 'SCHEDULE_VISIT': {
         if (!state.userTeam) return state;
         const visitCost = 8; // Same cost as the old immediate official visit
@@ -3132,19 +3174,24 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ...state,
             userTeam: updatedUserTeam,
             allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
-            recruits: state.recruits.map(r => {
-                if (r.id === action.payload.recruitId) {
-                    return { ...r, visitStatus: 'Scheduled', visitWeek: action.payload.week };
-                }
-                return r;
-            }),
-            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
-            toastMessage: `Official visit for ${state.recruits.find(r => r.id === action.payload.recruitId)?.name} scheduled for Week ${action.payload.week}. (-$${financialCost})`,
-        };
-    }
-    case 'OFFER_SCHOLARSHIP': {
-        if (!state.userTeam) return state;
-        const offerCost = 9;
+		            recruits: state.recruits.map(r => {
+		                if (r.id === action.payload.recruitId) {
+		                    const teamName = state.userTeam!.name;
+		                    const teamMomentum = { ...(r.teamMomentum || {}) };
+		                    teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 2, -20, 20);
+		                    const visitHistory = [...(r.visitHistory || [])];
+		                    visitHistory.push({ teamName, week: action.payload.week, kind: 'Official' });
+		                    return { ...r, visitStatus: 'Scheduled', visitWeek: action.payload.week, teamMomentum, visitHistory, lastUserContactWeek: state.week };
+		                }
+		                return r;
+		            }),
+	            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
+	            toastMessage: `Official visit for ${state.recruits.find(r => r.id === action.payload.recruitId)?.name} scheduled for Week ${action.payload.week}. (-$${financialCost})`,
+	        };
+	    }
+	    case 'OFFER_SCHOLARSHIP': {
+	        if (!state.userTeam) return state;
+	        const offerCost = 9;
         if (state.contactsMadeThisWeek + offerCost > getContactPoints(state.userTeam)) {
             return {
                 ...state,
@@ -3180,34 +3227,68 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             }
         };
 
-        return {
-          ...state,
-          userTeam: updatedUserTeam,
-          allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
-          recruits: state.recruits.map(r => 
-            r.id === action.payload.recruitId 
-              ? { ...r, userHasOffered: true, interest: Math.min(100, r.interest + randomBetween(15, 25)) } 
-              : r
-          ),
-          contactsMadeThisWeek: state.contactsMadeThisWeek + offerCost,
-          toastMessage: `Scholarship offered. (-$${financialCost})`,
-        };
-    }
-    case 'PULL_SCHOLARSHIP': {
-        return {
-            ...state,
-            recruits: state.recruits.map(r => {
-                if (r.id === action.payload.recruitId) {
-                    const newRecruit = { ...r, userHasOffered: false };
-                    if (newRecruit.verbalCommitment === state.userTeam?.name) {
-                        newRecruit.verbalCommitment = null;
-                    }
-                    return newRecruit;
-                }
-                return r;
-            })
-        };
-    }
+	        const pitchType = action.payload.pitchType ?? 'Standard';
+	        const offeredRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
+	        const packageDealLinkedIds = new Set(
+	            (offeredRecruit?.relationships || [])
+	                .filter(rel => rel.sportLevel === 'HS' && (rel.notes || '').toLowerCase().includes('package deal'))
+	                .map(rel => rel.personId)
+	        );
+	        return {
+	          ...state,
+	          userTeam: updatedUserTeam,
+	          allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
+	          recruits: state.recruits.map(r => {
+	            const teamName = state.userTeam!.name;
+	            if (r.id === action.payload.recruitId) {
+	                const teamMomentum = { ...(r.teamMomentum || {}) };
+	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 5, -20, 20);
+	                const offerHistory = [...(r.offerHistory || [])];
+	                offerHistory.push({ teamName, week: state.week, pitchType, source: 'User' });
+	                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
+	                return { ...r, userHasOffered: true, interest: Math.min(100, r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week };
+	            }
+
+	            if (packageDealLinkedIds.has(r.id) && !r.verbalCommitment && !r.declinedOffers?.includes(teamName)) {
+	                const teamMomentum = { ...(r.teamMomentum || {}) };
+	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 3, -20, 20);
+	                const boosted = clamp(r.interest + 6, 0, 100);
+	                const lastRecruitingNews = r.lastRecruitingNews || (offeredRecruit ? `${r.name} is considering a package deal with ${offeredRecruit.name}.` : r.lastRecruitingNews);
+	                return boosted === r.interest ? { ...r, teamMomentum, lastRecruitingNews } : { ...r, interest: boosted, teamMomentum, lastRecruitingNews };
+	            }
+
+	            return r;
+	          }),
+	          contactsMadeThisWeek: state.contactsMadeThisWeek + offerCost,
+	          toastMessage: `Scholarship offered (${pitchType}). (-$${financialCost})`,
+	        };
+	    }
+	    case 'PULL_SCHOLARSHIP': {
+	        return {
+	            ...state,
+	            recruits: state.recruits.map(r => {
+	                if (r.id === action.payload.recruitId) {
+	                    const teamName = state.userTeam?.name;
+	                    const offerHistory = [...(r.offerHistory || [])];
+	                    if (teamName) {
+	                        for (let i = offerHistory.length - 1; i >= 0; i--) {
+	                            const entry = offerHistory[i];
+	                            if (entry.teamName === teamName && !entry.revoked) {
+	                                offerHistory[i] = { ...entry, revoked: true };
+	                                break;
+	                            }
+	                        }
+	                    }
+	                    const newRecruit = { ...r, userHasOffered: false, offerHistory };
+	                    if (newRecruit.verbalCommitment === state.userTeam?.name) {
+	                        newRecruit.verbalCommitment = null;
+	                    }
+	                    return newRecruit;
+	                }
+	                return r;
+	            })
+	        };
+	    }
     case 'NEGATIVE_RECRUIT': {
         if (!state.userTeam || !state.coach) return state;
 
@@ -3257,26 +3338,37 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         let updatedRecruits = [...state.recruits];
         let updatedCoach = { ...state.coach };
 
-        if (roll < backfireChance) {
-            // Backfire
-            updatedCoach.reputation = Math.max(0, updatedCoach.reputation - repPenalty);
-            updatedRecruits = updatedRecruits.map(r => {
-                if (r.id === recruitId) {
-                    return { ...r, interest: Math.max(0, r.interest - interestPenalty) };
-                }
-                return r;
-            });
-            toastMessage = `It backfired! Your negative recruiting against ${targetSchool} was discovered. Your reputation took a hit, and ${recruit.name}'s interest in your program has decreased. (-$${financialCost})`;
-        } else if (roll < backfireChance + successChance) {
-            // Success
-            const targetTeam = state.allTeams.find(t => t.name === targetSchool);
-            if(targetTeam) {
-                // This is a bit of a hack, but we'll manually lower the recruit's interest in the target school.
-                // A better approach would be to have a more sophisticated system for tracking recruit interest.
-                toastMessage = `It worked! Your negative recruiting against ${targetSchool} was effective. ${recruit.name}'s interest in their program has decreased. (-$${financialCost})`;
-            } else {
-                toastMessage = 'Something went wrong.';
-            }
+	        if (roll < backfireChance) {
+	            // Backfire
+	            updatedCoach.reputation = Math.max(0, updatedCoach.reputation - repPenalty);
+	            updatedRecruits = updatedRecruits.map(r => {
+	                if (r.id === recruitId) {
+	                    const userTeamName = state.userTeam!.name;
+	                    const teamMomentum = { ...(r.teamMomentum || {}) };
+	                    teamMomentum[userTeamName] = clamp((teamMomentum[userTeamName] ?? 0) - 4, -20, 20);
+	                    return { ...r, interest: Math.max(0, r.interest - interestPenalty), teamMomentum };
+	                }
+	                return r;
+	            });
+	            toastMessage = `It backfired! Your negative recruiting against ${targetSchool} was discovered. Your reputation took a hit, and ${recruit.name}'s interest in your program has decreased. (-$${financialCost})`;
+	        } else if (roll < backfireChance + successChance) {
+	            // Success
+	            const targetTeam = state.allTeams.find(t => t.name === targetSchool);
+	            if(targetTeam) {
+	                // This is a bit of a hack, but we'll manually lower the recruit's interest in the target school.
+	                // A better approach would be to have a more sophisticated system for tracking recruit interest.
+	                updatedRecruits = updatedRecruits.map(r => {
+	                    if (r.id !== recruitId) return r;
+	                    const userTeamName = state.userTeam!.name;
+	                    const teamMomentum = { ...(r.teamMomentum || {}) };
+	                    teamMomentum[targetSchool] = clamp((teamMomentum[targetSchool] ?? 0) - 6, -20, 20);
+	                    teamMomentum[userTeamName] = clamp((teamMomentum[userTeamName] ?? 0) + 1, -20, 20);
+	                    return { ...r, teamMomentum };
+	                });
+	                toastMessage = `It worked! Your negative recruiting against ${targetSchool} was effective. ${recruit.name}'s interest in their program has decreased. (-$${financialCost})`;
+	            } else {
+	                toastMessage = 'Something went wrong.';
+	            }
             
         } else {
             // Failure
@@ -4793,7 +4885,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             });
         });
         let newRecruits = Array.from({ length: 350 }, () => createRecruit());
+        newRecruits = generateRecruitRelationships(newRecruits);
+        newRecruits = recomputeRecruitBoardRanks(newRecruits);
         newRecruits = runInitialRecruitingOffers(staffAgedTeams, newRecruits);
+        newRecruits = applyPackageDealOfferMirroring(newRecruits, staffAgedTeams, newUserTeam.name, 1);
         const nextInternationalProspects = generateInternationalProspects();
         const nextNBASimulation = simulateNBASeason(state.season + 1);
 
@@ -5412,7 +5507,11 @@ const schoolNameToSlug = (name: string): string => {
     "Florida State": "florida-st",
     "Georgia Southern": "ga-southern",
     "Ohio State": "ohio-st",
-    "Maryland Eastern Shore": "umes.png"
+    "USC": "southern-california",
+    "Saint Mary's": "st-marys-ca",
+    "NC State": "north-carolina-st",
+    "South Florida": "south-fla",
+    "Maryland Eastern Shore": "umes.png",
   };
 
   if (specialCases[name]) {
@@ -5678,12 +5777,16 @@ const NavAndActions = ({ state, dispatch, colors }: { state: GameState, dispatch
         const actions = [];
         let disabled = false;
 
+        // Tournament (prioritize explicit tournament view even if gameInSeason is stale)
+        if (state.status === GameStatus.TOURNAMENT && state.tournament && !state.tournament.champion) {
+            actions.push({ label: 'Simulate Round', onClick: () => dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' }) });
+        }
         // Regular Season
-        if (state.gameInSeason <= 31) {
-             actions.push({ label: 'Simulate Day', onClick: handleSimulate });
-             actions.push({ label: 'Sim to Next Game', onClick: handleSimToNextGame });
-        } 
-        // Tournament
+        else if (state.gameInSeason <= 31) {
+            actions.push({ label: 'Simulate Day', onClick: handleSimulate });
+            actions.push({ label: 'Sim to Next Game', onClick: handleSimToNextGame });
+        }
+        // Tournament (fallback)
         else if (state.tournament && !state.tournament.champion) {
             actions.push({ label: 'Simulate Round', onClick: () => dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' }) });
         }
@@ -5827,6 +5930,7 @@ const Subheading = ({ children, color }: SubheadingProps) => (
 const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: TeamColors, dispatch: React.Dispatch<GameAction>}) => {
     const isNBA = state.coach?.currentLeague === 'NBA';
     const currentTeam = isNBA ? state.nbaTeams.find(t => t.name === state.coach?.currentNBATeam) : state.userTeam;
+    const [promoScheduling, setPromoScheduling] = useState<null | { week: number; opponent: string }>(null);
 
     const powerRankings = useMemo(() => {
         const teams = isNBA ? state.nbaTeams : state.allTeams;
@@ -5862,6 +5966,138 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
 
     return (
         <div>
+            {promoScheduling && state.userTeam && !isNBA && (
+                <div
+                    onClick={() => setPromoScheduling(null)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.55)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 16,
+                        zIndex: 9999,
+                    }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: 'min(560px, 96vw)',
+                            background: '#fff',
+                            border: `3px solid ${colors.primary}`,
+                            borderRadius: 10,
+                            boxShadow: '0 14px 34px rgba(0,0,0,0.35)',
+                            padding: 14,
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#111' }}>
+                                    Schedule Promotion
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#444' }}>
+                                    {getGameDateString(state.season + 2024, promoScheduling.week)} vs {promoScheduling.opponent}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPromoScheduling(null)}
+                                style={{
+                                    border: `2px solid ${colors.primary}`,
+                                    background: '#fff',
+                                    color: '#111',
+                                    borderRadius: 8,
+                                    width: 34,
+                                    height: 34,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                    fontSize: '0.9rem',
+                                    lineHeight: 1,
+                                }}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {(() => {
+                            const existingEvent = state.userTeam?.eventCalendar?.find(e => e.week === promoScheduling.week);
+                            if (existingEvent) {
+                                const label =
+                                    state.eventPlaybookCatalog.find(p => p.id === existingEvent.playbookId)?.label || 'Event Scheduled';
+                                return (
+                                    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <div style={{ background: '#f0f8ff', padding: 10, borderRadius: 8, border: '1px solid #b0c4de' }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#0056b3' }}>{label}</div>
+                                            <div style={{ fontSize: '0.65rem', marginTop: 6, color: '#333' }}>Status: {existingEvent.status}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            style={{
+                                                backgroundColor: '#ffebee',
+                                                color: '#c62828',
+                                                border: '1px solid #ef9a9a',
+                                                padding: '0.45rem 0.75rem',
+                                                fontSize: '0.7rem',
+                                                cursor: 'pointer',
+                                                fontFamily: 'inherit',
+                                                width: '100%',
+                                                borderRadius: 8,
+                                            }}
+                                            onClick={() => {
+                                                dispatch({ type: 'CANCEL_EVENT', payload: { eventId: existingEvent.id } });
+                                                setPromoScheduling(null);
+                                            }}
+                                        >
+                                            Cancel Event
+                                        </button>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    <select
+                                        style={{
+                                            padding: '0.55rem',
+                                            borderRadius: 8,
+                                            border: `2px solid ${colors.primary}55`,
+                                            fontSize: '0.7rem',
+                                            fontFamily: "'Press Start 2P', 'Courier New', system-ui, sans-serif",
+                                            background: '#fff',
+                                        }}
+                                        defaultValue=""
+                                        onChange={(e) => {
+                                            const playbookId = e.target.value;
+                                            if (!playbookId) return;
+                                            dispatch({
+                                                type: 'SCHEDULE_EVENT',
+                                                payload: {
+                                                    playbookId,
+                                                    week: promoScheduling.week,
+                                                    opponent: promoScheduling.opponent,
+                                                },
+                                            });
+                                            setPromoScheduling(null);
+                                        }}
+                                    >
+                                        <option value="">Select Promotion...</option>
+                                        {state.eventPlaybookCatalog.map(event => (
+                                            <option key={event.id} value={event.id}>
+                                                {event.label} (${event.cost.toLocaleString()})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div style={{ fontSize: '0.65rem', color: '#666' }}>
+                                        Promotions are for upcoming home games.
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>
+            )}
             {state.trainingSummary.length > 0 && !isNBA && state.gameInSeason === 1 && (
                 <div style={{marginBottom: '20px'}}>
                 <Subheading color={colors.primary}>Off-Season Training Results</Subheading>
@@ -5985,6 +6221,7 @@ const Dashboard = ({ state, colors, dispatch }: { state: GameState, colors: Team
                         currentWeek={state.gameInSeason}
                         getLogoSrc={(schoolName) => `school logos/${schoolNameToSlug(schoolName)}`}
                         getTeamColors={(schoolName) => SCHOOL_COLORS[schoolName] || { primary: '#C0C0C0', secondary: '#808080', text: '#FFFFFF' }}
+                        onSelectHomeGame={({ week, opponent }) => setPromoScheduling({ week, opponent })}
                     />
                 </div>
             )}
@@ -6661,8 +6898,8 @@ const StarRating = ({ stars }: { stars: number }) => {
 
 };
 
-const CommitmentStatus = ({ teamName, teamRank, isSigningPeriod }: { teamName: string, teamRank?: number, isSigningPeriod: boolean }) => {
-    const teamColors = SCHOOL_COLORS[teamName] || { primary: '#C0C0C0', secondary: '#808080', text: '#000000' };
+	const CommitmentStatus = ({ teamName, teamRank, isSigningPeriod, isSoftCommit }: { teamName: string, teamRank?: number, isSigningPeriod: boolean, isSoftCommit?: boolean }) => {
+	    const teamColors = SCHOOL_COLORS[teamName] || { primary: '#C0C0C0', secondary: '#808080', text: '#000000' };
 
     const style: React.CSSProperties = {
         ...styles.button,
@@ -6680,7 +6917,7 @@ const CommitmentStatus = ({ teamName, teamRank, isSigningPeriod }: { teamName: s
         lineHeight: '1.2',
     };
 
-    const [label1, label2] = isSigningPeriod ? ['Signed', 'With'] : ['Verbally', 'Committed'];
+	    const [label1, label2] = isSigningPeriod ? ['Signed', 'With'] : [isSoftCommit ? 'Soft' : 'Hard', 'Committed'];
 
     return (
         <div style={style}>
@@ -6720,18 +6957,30 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
     );
 };
 
-const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { state: GameState, dispatch: React.Dispatch<GameAction>, colors: TeamColors, isSigningPeriod?: boolean }) => {
-    const [viewingOffersFor, setViewingOffersFor] = useState<Recruit | null>(null);
-    const [negativeRecruitingFor, setNegativeRecruitingFor] = useState<Recruit | null>(null);
-    const [schedulingVisitFor, setSchedulingVisitFor] = useState<Recruit | null>(null);
-    const [hideVerballyCommitted, setHideVerballyCommitted] = useState(false);
-    const [hideSigned, setHideSigned] = useState(false);
-    const [showUserCommitsOnly, setShowUserCommitsOnly] = useState(false);
-    const [positionFilter, setPositionFilter] = useState<'all' | RosterPositions>('all');
-    const [starFilter, setStarFilter] = useState<'all' | 1 | 2 | 3 | 4 | 5>('all');
-    const [minInterest, setMinInterest] = useState(0);
-    const [targetsOnly, setTargetsOnly] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
+	const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { state: GameState, dispatch: React.Dispatch<GameAction>, colors: TeamColors, isSigningPeriod?: boolean }) => {
+	    const [viewingOffersFor, setViewingOffersFor] = useState<Recruit | null>(null);
+	    const [negativeRecruitingFor, setNegativeRecruitingFor] = useState<Recruit | null>(null);
+	    const [schedulingVisitFor, setSchedulingVisitFor] = useState<Recruit | null>(null);
+	    const [offeringScholarshipFor, setOfferingScholarshipFor] = useState<Recruit | null>(null);
+	    const [showRecruitingAnalytics, setShowRecruitingAnalytics] = useState(false);
+	    const [hideVerballyCommitted, setHideVerballyCommitted] = useState(false);
+	    const [hideSigned, setHideSigned] = useState(false);
+	    const [showUserCommitsOnly, setShowUserCommitsOnly] = useState(false);
+	    const [positionFilter, setPositionFilter] = useState<'all' | RosterPositions>('all');
+	    const [starFilter, setStarFilter] = useState<'all' | 1 | 2 | 3 | 4 | 5>('all');
+	    const [minInterest, setMinInterest] = useState(0);
+	    const [targetsOnly, setTargetsOnly] = useState(false);
+	    const [searchQuery, setSearchQuery] = useState('');
+	    const [regionFilter, setRegionFilter] = useState<'all' | 'Northeast' | 'Midwest' | 'South' | 'West'>('all');
+	    const [homeStateFilter, setHomeStateFilter] = useState<'all' | string>('all');
+	    const [maxDistanceMiles, setMaxDistanceMiles] = useState(2500);
+	    const [stageFilter, setStageFilter] = useState<'all' | string>('all');
+	    const [needsFitOnly, setNeedsFitOnly] = useState(false);
+	    const [showColLocation, setShowColLocation] = useState(false);
+	    const [showColHighSchool, setShowColHighSchool] = useState(false);
+	    const [showColNationalRank, setShowColNationalRank] = useState(false);
+	    const [showColStage, setShowColStage] = useState(false);
+	    const [showColTop2, setShowColTop2] = useState(false);
     type SortableKey = keyof Pick<Recruit, 'overall' | 'potential' | 'interest' | 'stars'> | 'rank';
     const [sortConfig, setSortConfig] = useState<{ key: SortableKey; direction: 'ascending' | 'descending' }>({ key: 'rank', direction: 'ascending' });
 
@@ -6749,18 +6998,13 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
     }, [state.allTeams]);
 
     const recruitRanks = useMemo(() => {
+        // Use the canonical board ranks computed in `services/gameService.ts` via `recomputeRecruitBoardRanks`.
         const ranks = new Map<string, number>();
-        [...state.recruits]
-            .sort((a, b) => {
-                const scoreA = a.overall * 0.7 + a.potential * 0.3;
-                const scoreB = b.overall * 0.7 + b.potential * 0.3;
-                return scoreB - scoreA;
-            })
-            .forEach((recruit, index) => {
-                if (index < 100) {
-                    ranks.set(recruit.id, index + 1);
-                }
-            });
+        state.recruits.forEach(recruit => {
+            if (typeof recruit.nationalRank === 'number') {
+                ranks.set(recruit.id, recruit.nationalRank);
+            }
+        });
         return ranks;
     }, [state.recruits]);
 
@@ -6793,28 +7037,48 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
         return sortableRecruits;
     }, [state.recruits, sortConfig, recruitRanks]);
 
-    const filteredRecruits = useMemo(() => {
-        const query = searchQuery.trim().toLowerCase();
-        return sortedRecruits.filter(r => {
-            const hasCommitment = !!r.verbalCommitment;
-            const isSigned = Boolean(isSigningPeriod && hasCommitment);
-            const isVerbalOnly = hasCommitment && !isSigned;
-            const committedToUser = userTeamName ? r.verbalCommitment === userTeamName : false;
-            if (hideSigned && isSigned) return false;
-            if (hideVerballyCommitted && isVerbalOnly) return false;
-            if (showUserCommitsOnly && !committedToUser) return false;
-            if (positionFilter !== 'all') {
-                const matchesPrimary = r.position === positionFilter;
-                const matchesSecondary = r.secondaryPosition === positionFilter;
-                if (!matchesPrimary && !matchesSecondary) return false;
-            }
-            if (starFilter !== 'all' && r.stars !== starFilter) return false;
-            if (r.interest < minInterest) return false;
-            if (targetsOnly && !r.isTargeted) return false;
-            if (query && !r.name.toLowerCase().includes(query)) return false;
-            return true;
-        });
-    }, [sortedRecruits, hideSigned, hideVerballyCommitted, showUserCommitsOnly, isSigningPeriod, positionFilter, starFilter, minInterest, targetsOnly, searchQuery, userTeamName]);
+	    const filteredRecruits = useMemo(() => {
+	        const query = searchQuery.trim().toLowerCase();
+	        const needsText = state.userTeam ? calculateTeamNeeds(state.userTeam) : '';
+	        const needsPositions = (needsText.match(/\b(PG|SG|SF|PF|C)\b/g) || []) as RosterPositions[];
+	        return sortedRecruits.filter(r => {
+	            const hasCommitment = !!r.verbalCommitment;
+	            const isSigned = Boolean(isSigningPeriod && hasCommitment);
+	            const isVerbalOnly = hasCommitment && !isSigned;
+	            const committedToUser = userTeamName ? r.verbalCommitment === userTeamName : false;
+	            if (hideSigned && isSigned) return false;
+	            if (hideVerballyCommitted && isVerbalOnly) return false;
+	            if (showUserCommitsOnly && !committedToUser) return false;
+	            if (positionFilter !== 'all') {
+	                const matchesPrimary = r.position === positionFilter;
+	                const matchesSecondary = r.secondaryPosition === positionFilter;
+	                if (!matchesPrimary && !matchesSecondary) return false;
+	            }
+	            if (starFilter !== 'all' && r.stars !== starFilter) return false;
+	            if (r.interest < minInterest) return false;
+	            if (targetsOnly && !r.isTargeted) return false;
+	            if (regionFilter !== 'all') {
+	                const reg = getRecruitRegionForState(r.hometownState || r.homeState) || 'Unknown';
+	                if (reg !== regionFilter) return false;
+	            }
+	            if (homeStateFilter !== 'all') {
+	                if ((r.hometownState || r.homeState) !== homeStateFilter) return false;
+	            }
+	            if (maxDistanceMiles < 2500 && state.userTeam) {
+	                const dist = estimateRecruitDistanceMilesToTeam(r, state.userTeam);
+	                if (dist > maxDistanceMiles) return false;
+	            }
+	            if (stageFilter !== 'all') {
+	                if ((r.recruitmentStage || (r.verbalCommitment ? 'HardCommit' : 'Open')) !== stageFilter) return false;
+	            }
+	            if (needsFitOnly && needsPositions.length) {
+	                const fits = needsPositions.includes(r.position as RosterPositions) || (r.secondaryPosition ? needsPositions.includes(r.secondaryPosition as RosterPositions) : false);
+	                if (!fits) return false;
+	            }
+	            if (query && !r.name.toLowerCase().includes(query)) return false;
+	            return true;
+	        });
+	    }, [sortedRecruits, hideSigned, hideVerballyCommitted, showUserCommitsOnly, isSigningPeriod, positionFilter, starFilter, minInterest, targetsOnly, searchQuery, userTeamName, regionFilter, homeStateFilter, maxDistanceMiles, stageFilter, needsFitOnly, state.userTeam]);
 
     const requestSort = (key: SortableKey) => {
         let direction: 'ascending' | 'descending' = 'descending';
@@ -6839,38 +7103,111 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
     const contactPointsRemaining = Math.max(0, getContactPoints(state.userTeam) - state.contactsMadeThisWeek);
     const positionOptions: (RosterPositions | 'all')[] = ['all', 'PG', 'SG', 'SF', 'PF', 'C'];
     const starOptions: ('all' | 1 | 2 | 3 | 4 | 5)[] = ['all', 5, 4, 3, 2, 1];
-    const filtersActive = hideVerballyCommitted || hideSigned || showUserCommitsOnly || positionFilter !== 'all' || starFilter !== 'all' || minInterest > 0 || targetsOnly || searchQuery.trim().length > 0;
+	    const filtersActive =
+	        hideVerballyCommitted ||
+	        hideSigned ||
+	        showUserCommitsOnly ||
+	        positionFilter !== 'all' ||
+	        starFilter !== 'all' ||
+	        minInterest > 0 ||
+	        targetsOnly ||
+	        regionFilter !== 'all' ||
+	        homeStateFilter !== 'all' ||
+	        maxDistanceMiles < 2500 ||
+	        stageFilter !== 'all' ||
+	        needsFitOnly ||
+	        searchQuery.trim().length > 0;
 
-    const resetRecruitFilters = () => {
-        setHideVerballyCommitted(false);
-        setHideSigned(false);
-        setShowUserCommitsOnly(false);
-        setPositionFilter('all');
-        setStarFilter('all');
-        setMinInterest(0);
-        setTargetsOnly(false);
-        setSearchQuery('');
-    };
+	    const resetRecruitFilters = () => {
+	        setHideVerballyCommitted(false);
+	        setHideSigned(false);
+	        setShowUserCommitsOnly(false);
+	        setPositionFilter('all');
+	        setStarFilter('all');
+	        setMinInterest(0);
+	        setTargetsOnly(false);
+	        setSearchQuery('');
+	        setRegionFilter('all');
+	        setHomeStateFilter('all');
+	        setMaxDistanceMiles(2500);
+	        setStageFilter('all');
+	        setNeedsFitOnly(false);
+	    };
 
-    const scholarshipTextStyle: React.CSSProperties = {
-        color: availableScholarships < 0 ? '#B22222' : 'inherit',
-        fontWeight: availableScholarships < 0 ? 'bold' : 'normal',
-        textAlign: 'right'
-    };
+	    const scholarshipTextStyle: React.CSSProperties = {
+	        color: availableScholarships < 0 ? '#B22222' : 'inherit',
+	        fontWeight: availableScholarships < 0 ? 'bold' : 'normal',
+	        textAlign: 'right'
+	    };
+	
+	    const teamsByName = useMemo(() => new Map(state.allTeams.map(t => [t.name, t])), [state.allTeams]);
+	    const topTwoByRecruitId = useMemo(() => {
+	        const map = new Map<string, { leader?: string; second?: string }>();
+	        if (!showColTop2) return map;
+	        state.recruits.forEach(r => {
+	            const offerNames = [...(r.cpuOffers || []), ...(r.userHasOffered ? [state.userTeam!.name] : [])];
+	            if (offerNames.length === 0) return;
+	            const details = offerNames
+	                .map(teamName => {
+	                    const team = teamsByName.get(teamName);
+	                    if (!team) return null;
+	                    return { name: teamName, score: calculateRecruitInterestScore(r, team, { gameInSeason: state.gameInSeason }) };
+	                })
+	                .filter(Boolean) as { name: string; score: number }[];
+	            if (!details.length) return;
+	            details.sort((a, b) => b.score - a.score);
+	            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10 });
+	            const leader = shortlist[0]?.name || details[0]?.name;
+	            const second = shortlist[1]?.name || details[1]?.name;
+	            map.set(r.id, { leader, second });
+	        });
+	        return map;
+	    }, [showColTop2, state.recruits, state.userTeam, state.allTeams, state.gameInSeason, teamsByName]);
 
-    return (
-        <div>
-            {viewingOffersFor && (
-                <OffersModal 
+	    return (
+	        <div>
+	            {viewingOffersFor && (
+	                <OffersModal 
                     recruit={viewingOffersFor} 
                     userTeamName={state.userTeam.name}
                     allTeams={state.allTeams}
                     gameInSeason={state.gameInSeason}
+                    onOpenRecruitId={(recruitId) => {
+                      const related = state.recruits.find(r => r.id === recruitId);
+                      if (related) setViewingOffersFor(related);
+                    }}
+                    contactPointsUsed={state.contactsMadeThisWeek}
+                    contactPointsMax={getContactPoints(state.userTeam)}
+                    scoutLevel={state.userTeam?.scoutingReports?.[viewingOffersFor.id] || 0}
+                    actionsDisabled={!!viewingOffersFor.verbalCommitment && viewingOffersFor.verbalCommitment !== state.userTeam.name}
+                    onContactRecruit={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: viewingOffersFor.id } })}
+                    onOfferScholarship={() => setOfferingScholarshipFor(viewingOffersFor)}
+                    onPullOffer={() => dispatch({ type: 'PULL_SCHOLARSHIP', payload: { recruitId: viewingOffersFor.id } })}
+                    onCoachVisit={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: viewingOffersFor.id } })}
+                    onScheduleOfficialVisit={() => setSchedulingVisitFor(viewingOffersFor)}
+                    onScout={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: viewingOffersFor.id, cost: 3 } })}
+                    onNegativeRecruit={() => setNegativeRecruitingFor(viewingOffersFor)}
                     onClose={() => setViewingOffersFor(null)} 
-                />
-            )}
-            {negativeRecruitingFor && (
-                <NegativeRecruitingModal 
+	                />
+	            )}
+	            {offeringScholarshipFor && (
+	                <OfferScholarshipModal
+	                    recruit={offeringScholarshipFor}
+	                    onClose={() => setOfferingScholarshipFor(null)}
+	                    dispatch={dispatch}
+	                />
+	            )}
+	            {showRecruitingAnalytics && (
+	                <RecruitingAnalyticsModal
+	                    recruits={state.recruits}
+	                    allTeams={state.allTeams}
+	                    userTeam={state.userTeam}
+	                    gameInSeason={state.gameInSeason}
+	                    onClose={() => setShowRecruitingAnalytics(false)}
+	                />
+	            )}
+	            {negativeRecruitingFor && (
+	                <NegativeRecruitingModal 
                     recruit={negativeRecruitingFor} 
                     onClose={() => setNegativeRecruitingFor(null)} 
                     dispatch={dispatch}
@@ -6940,62 +7277,136 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
                             Targets only
                         </label>
                     </div>
-                    <div style={styles.recruitFiltersRow}>
-                        <label style={styles.filterControl}>
-                            <span>Position</span>
-                            <select value={positionFilter} onChange={e => setPositionFilter(e.target.value as 'all' | RosterPositions)}>
-                                {positionOptions.map(option => (
-                                    <option key={option} value={option}>
-                                        {option === 'all' ? 'All' : option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label style={styles.filterControl}>
-                            <span>Stars</span>
-                            <select value={starFilter} onChange={e => setStarFilter(e.target.value === 'all' ? 'all' : Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}>
-                                {starOptions.map(option => (
-                                    <option key={option} value={option}>
-                                        {option === 'all' ? 'All' : `${option}-Star`}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label style={{ ...styles.filterControl, flex: '2 1 220px' }}>
-                            <span>Minimum Interest: {minInterest}%</span>
-                            <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                value={minInterest}
-                                onChange={e => setMinInterest(parseInt(e.target.value))}
-                            />
-                        </label>
-                    </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                    <p style={scholarshipTextStyle}>Available Scholarships: {availableScholarships}/{totalScholarships}</p>
-                </div>
-            </div>
+	                    <div style={styles.recruitFiltersRow}>
+	                        <label style={styles.filterControl}>
+	                            <span>Position</span>
+	                            <select value={positionFilter} onChange={e => setPositionFilter(e.target.value as 'all' | RosterPositions)}>
+	                                {positionOptions.map(option => (
+	                                    <option key={option} value={option}>
+	                                        {option === 'all' ? 'All' : option}
+	                                    </option>
+	                                ))}
+	                            </select>
+	                        </label>
+	                        <label style={styles.filterControl}>
+	                            <span>Stars</span>
+	                            <select value={starFilter} onChange={e => setStarFilter(e.target.value === 'all' ? 'all' : Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}>
+	                                {starOptions.map(option => (
+	                                    <option key={option} value={option}>
+	                                        {option === 'all' ? 'All' : `${option}-Star`}
+	                                    </option>
+	                                ))}
+	                            </select>
+	                        </label>
+	                        <label style={styles.filterControl}>
+	                            <span>Region</span>
+	                            <select value={regionFilter} onChange={e => setRegionFilter(e.target.value as any)}>
+	                                <option value="all">All</option>
+	                                <option value="Northeast">Northeast</option>
+	                                <option value="Midwest">Midwest</option>
+	                                <option value="South">South</option>
+	                                <option value="West">West</option>
+	                            </select>
+	                        </label>
+	                        <label style={styles.filterControl}>
+	                            <span>State</span>
+	                            <select value={homeStateFilter} onChange={e => setHomeStateFilter(e.target.value)}>
+	                                <option value="all">All</option>
+	                                {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+	                            </select>
+	                        </label>
+	                        <label style={styles.filterControl}>
+	                            <span>Stage</span>
+	                            <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
+	                                <option value="all">All</option>
+	                                <option value="Open">Open</option>
+	                                <option value="Narrowing">Narrowing</option>
+	                                <option value="SoftCommit">Soft Commit</option>
+	                                <option value="HardCommit">Hard Commit</option>
+	                                <option value="Signed">Signed</option>
+	                            </select>
+	                        </label>
+	                        <label style={{ ...styles.filterControl, flex: '2 1 220px' }}>
+	                            <span>Minimum Interest: {minInterest}%</span>
+	                            <input
+	                                type="range"
+	                                min={0}
+	                                max={100}
+	                                value={minInterest}
+	                                onChange={e => setMinInterest(parseInt(e.target.value))}
+	                            />
+	                        </label>
+	                        <label style={{ ...styles.filterControl, flex: '2 1 220px' }}>
+	                            <span>Max Distance: {maxDistanceMiles} mi</span>
+	                            <input
+	                                type="range"
+	                                min={0}
+	                                max={2500}
+	                                step={50}
+	                                value={maxDistanceMiles}
+	                                onChange={e => setMaxDistanceMiles(parseInt(e.target.value))}
+	                            />
+	                        </label>
+	                        <label style={{ ...styles.filterControl, flex: '0 0 auto', alignItems: 'center' }}>
+	                            <span>Needs Fit</span>
+	                            <input type="checkbox" checked={needsFitOnly} onChange={e => setNeedsFitOnly(e.target.checked)} />
+	                        </label>
+	                    </div>
+	                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '0.6rem', color: '#333' }}>
+	                        <span style={{ fontWeight: 'bold' }}>Columns:</span>
+	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+	                            <input type="checkbox" checked={showColLocation} onChange={e => setShowColLocation(e.target.checked)} />
+	                            Location
+	                        </label>
+	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+	                            <input type="checkbox" checked={showColHighSchool} onChange={e => setShowColHighSchool(e.target.checked)} />
+	                            HS
+	                        </label>
+	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+	                            <input type="checkbox" checked={showColNationalRank} onChange={e => setShowColNationalRank(e.target.checked)} />
+	                            Nat Rank
+	                        </label>
+	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+	                            <input type="checkbox" checked={showColStage} onChange={e => setShowColStage(e.target.checked)} />
+	                            Stage
+	                        </label>
+	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+	                            <input type="checkbox" checked={showColTop2} onChange={e => setShowColTop2(e.target.checked)} />
+	                            Top 2
+	                        </label>
+	                    </div>
+	                </div>
+	                <div style={{ textAlign: 'right' }}>
+	                    <p style={scholarshipTextStyle}>Available Scholarships: {availableScholarships}/{totalScholarships}</p>
+	                    <button style={{ ...styles.smallButton, marginTop: '6px' }} onClick={() => setShowRecruitingAnalytics(true)}>
+	                        Analytics
+	                    </button>
+	                </div>
+	            </div>
             <div style={styles.tableContainer}>
             <table style={{...styles.table, fontSize: '0.6rem'}}>
-                <thead style={styles.recruitingThead}>
-                    <tr>
-                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('rank')}>Rank {renderSortArrow('rank')}</th>
-                        <th style={{...styles.th, width: '18%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
-                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
-                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
-                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
-                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
-                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
-                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
-                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
-                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
-                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
-                        <th style={{...styles.th, width: '11%', backgroundColor: colors.primary, color: colors.text}}>Actions</th>
-                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
-                    </tr>
-                </thead>
+	                <thead style={styles.recruitingThead}>
+	                    <tr>
+	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('rank')}>Rank {renderSortArrow('rank')}</th>
+	                        <th style={{...styles.th, width: '18%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
+	                        {showColLocation && <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Loc</th>}
+	                        {showColHighSchool && <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>HS</th>}
+	                        {showColNationalRank && <th style={{...styles.th, width: '7%', backgroundColor: colors.primary, color: colors.text}}>Nat</th>}
+	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
+	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
+	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
+	                        {showColStage && <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Stage</th>}
+	                        {showColTop2 && <th style={{...styles.th, width: '14%', backgroundColor: colors.primary, color: colors.text}}>Top 2</th>}
+	                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
+	                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
+	                        <th style={{...styles.th, width: '11%', backgroundColor: colors.primary, color: colors.text}}>Actions</th>
+	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
+	                    </tr>
+	                </thead>
                 <tbody>
                     {filteredRecruits.map(r => {
                         const totalOffers = r.cpuOffers.length + (r.userHasOffered ? 1 : 0);
@@ -7026,11 +7437,35 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
                             <tr key={r.id} style={rowStyle}>
                                 <td style={styles.td}>{rank ? `#${rank}` : 'UR'}</td>
                                 <td style={styles.td}>
-                                    {r.name}
+                                    <button onClick={() => setViewingOffersFor(r)} style={{ ...styles.linkButton, fontWeight: 'bold' }}>
+                                        {r.name}
+                                    </button>
+                                    {(r.hometownCity || r.hometownState || r.highSchoolName) && (
+                                        <div
+                                            style={{ fontSize: '0.55rem', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                            title={[r.hometownCity, r.hometownState].filter(Boolean).join(', ') + (r.highSchoolName ? ` - ${r.highSchoolName}` : '')}
+                                        >
+                                            {[r.hometownCity, r.hometownState].filter(Boolean).join(', ')}
+                                            {r.highSchoolName ? ` - ${r.highSchoolName}` : ''}
+                                        </div>
+                                    )}
                                     {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>ðŸ’Ž</span>}
                                     {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>ðŸ’”</span>}
-                                </td>
-                                <td style={styles.td}><StarRating stars={r.stars}/></td>
+	                                </td>
+	                                {showColLocation && (
+	                                    <td style={styles.td} title={`Est. distance: ${estimateRecruitDistanceMilesToTeam(r, state.userTeam!).toLocaleString()} mi`}>
+	                                        {[r.hometownCity, r.hometownState || r.homeState].filter(Boolean).join(', ') || '—'}
+	                                    </td>
+	                                )}
+	                                {showColHighSchool && (
+	                                    <td style={styles.td} title={r.highSchoolName || ''}>
+	                                        {r.highSchoolName || '—'}
+	                                    </td>
+	                                )}
+	                                {showColNationalRank && (
+	                                    <td style={styles.td}>{r.nationalRank ? `#${r.nationalRank}` : '—'}</td>
+	                                )}
+	                                <td style={styles.td}><StarRating stars={r.stars}/></td>
                                 <td style={styles.td}>{r.position}{r.secondaryPosition ? `/${r.secondaryPosition}` : ''}</td>
                                 <td style={{...styles.td, maxWidth: '100px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={r.archetype}>{r.archetype || 'N/A'}</td>
                                 <td style={styles.td}>{formatPlayerHeight(r.height)}</td>
@@ -7044,46 +7479,71 @@ const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { sta
                                         <div style={styles.interestBadge}>
                                             <span>{r.interest}%</span>
                                             <span>{interestTier.label}</span>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td style={{...styles.td, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }}>
-                                    {r.verbalCommitment ? (
-                                        <CommitmentStatus teamName={r.verbalCommitment} teamRank={committedTeamRank} isSigningPeriod={!!isSigningPeriod} />
-                                    ) : hasUserDeclined ? (
-                                        <span style={{color: 'red'}}>Offer Declined</span>
-                                    ) : totalOffers > 0 ? (
-                                        <button onClick={() => setViewingOffersFor(r)} style={styles.linkButton}>{totalOffers} Offers</button>
+	                                        </div>
+	                                    </div>
+	                                </td>
+	                                {showColStage && (
+	                                    <td style={styles.td}>{r.recruitmentStage || (r.verbalCommitment ? 'HardCommit' : 'Open')}</td>
+	                                )}
+	                                {showColTop2 && (
+	                                    <td style={styles.td}>
+	                                        {(() => {
+	                                            const top2 = topTwoByRecruitId.get(r.id);
+	                                            if (!top2?.leader) return '—';
+	                                            return (
+	                                                <span title={top2.second ? `${top2.leader} / ${top2.second}` : top2.leader}>
+	                                                    <strong>{top2.leader}</strong>
+	                                                    {top2.second ? ` / ${top2.second}` : ''}
+	                                                </span>
+	                                            );
+	                                        })()}
+	                                    </td>
+	                                )}
+	                                <td style={{...styles.td, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }}>
+	                                    {r.verbalCommitment ? (
+	                                        <CommitmentStatus teamName={r.verbalCommitment} teamRank={committedTeamRank} isSigningPeriod={!!isSigningPeriod} isSoftCommit={!isSigningPeriod ? r.softCommitment : undefined} />
+	                                    ) : hasUserDeclined ? (
+	                                        <span style={{color: 'red'}}>Offer Declined</span>
+	                                    ) : totalOffers > 0 ? (
+	                                        <button onClick={() => setViewingOffersFor(r)} style={styles.linkButton}>{totalOffers} Offers</button>
                                     ) : 'Undecided'}
                                 </td>
                                 <td style={styles.td}>
                                     <MotivationDisplay motivations={r.motivations} />
                                 </td>
                                 <td style={styles.td}>
-                                     {userHasOffered ? (
-                                        <button style={{ ...styles.pullButton, width: '100%' }} onClick={() => dispatch({type: 'PULL_SCHOLARSHIP', payload: {recruitId: r.id}})} disabled={isCommittedAndLocked}>Pull Offer</button>
-                                    ) : (
-                                        <div style={styles.actionGrid}>
-                                            <button style={styles.smallButton} onClick={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || state.contactsMadeThisWeek >= getContactPoints(state.userTeam)}>Contact (1)</button>
-                                            <button style={styles.smallButton} onClick={() => dispatch({ type: 'OFFER_SCHOLARSHIP', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}>Offer (9)</button>
-                                            <button style={styles.smallButton} onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}>Coach Visit (5)</button>
-                                            <button style={styles.smallButton} onClick={() => setSchedulingVisitFor(r)} disabled={isCommittedAndLocked || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}>Official Visit (8)</button>
-                                            <button 
-                                                style={styles.smallButton} 
-                                                onClick={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: r.id, cost: 3 } })} 
-                                                disabled={isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
-                                            >
-                                                Scout ({(state.userTeam?.scoutingReports?.[r.id] || 0)}/3) (3)
-                                            </button>
-                                            <button
-                                                style={styles.smallButton}
-                                                onClick={() => setNegativeRecruitingFor(r)}
-                                                disabled={contactPointsRemaining <= 0}
-                                            >
-                                                Negative Recruit
-                                            </button>
-                                        </div>
-                                    )}
+                                    <div style={styles.actionGrid}>
+                                        <button
+                                          style={styles.smallButton}
+                                          onClick={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: r.id } })}
+                                          disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)}
+                                        >
+                                          {userHasOffered ? 'Maintain (1)' : 'Contact (1)'}
+                                        </button>
+                                        {userHasOffered ? (
+                                          <button style={styles.pullButton} onClick={() => dispatch({type: 'PULL_SCHOLARSHIP', payload: {recruitId: r.id}})} disabled={isCommittedAndLocked}>
+                                            Pull Offer
+                                          </button>
+                                        ) : (
+	                                        <button style={styles.smallButton} onClick={() => setOfferingScholarshipFor(r)} disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}>Offer (9)</button>
+                                        )}
+                                        <button style={styles.smallButton} onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}>Coach Visit (5)</button>
+                                        <button style={styles.smallButton} onClick={() => setSchedulingVisitFor(r)} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}>Official Visit (8)</button>
+                                        <button 
+                                            style={styles.smallButton} 
+                                            onClick={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: r.id, cost: 3 } })} 
+                                            disabled={isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
+                                        >
+                                            Scout ({(state.userTeam?.scoutingReports?.[r.id] || 0)}/3) (3)
+                                        </button>
+                                        <button
+                                            style={styles.smallButton}
+                                            onClick={() => setNegativeRecruitingFor(r)}
+                                            disabled={contactPointsRemaining <= 0}
+                                        >
+                                            Negative Recruit
+                                        </button>
+                                    </div>
                                 </td>
                                 <td style={styles.td}>
                                     <button 
@@ -7159,6 +7619,126 @@ const NegativeRecruitingModal = ({ recruit, onClose, dispatch }: { recruit: Recr
 
                 <button onClick={handleSubmit} disabled={!targetSchool}>Submit</button>
                 <button onClick={onClose} style={{ marginLeft: '10px' }}>Cancel</button>
+            </div>
+        </div>
+    );
+};
+
+const OfferScholarshipModal = ({ recruit, onClose, dispatch }: { recruit: Recruit; onClose: () => void; dispatch: React.Dispatch<GameAction> }) => {
+    const [pitchType, setPitchType] = useState<OfferPitchType>('Standard');
+
+    const options: { value: OfferPitchType; label: string; desc: string }[] = [
+        { value: 'Standard', label: 'Standard', desc: 'Balanced pitch.' },
+        { value: 'EarlyPush', label: 'Early Push', desc: 'Press urgency and momentum early.' },
+        { value: 'NILHeavy', label: 'NIL Heavy', desc: 'Lead with NIL opportunities.' },
+        { value: 'PlayingTimePromise', label: 'Playing Time Promise', desc: 'Emphasize role clarity and minutes.' },
+        { value: 'LocalAngle', label: 'Local Angle', desc: 'Family/proximity/hometown focus.' },
+        { value: 'AcademicPitch', label: 'Academic Pitch', desc: 'Sell academics and support systems.' },
+    ];
+
+    const handleSubmit = () => {
+        dispatch({ type: 'OFFER_SCHOLARSHIP', payload: { recruitId: recruit.id, pitchType } });
+        onClose();
+    };
+
+    return (
+        <div style={styles.modalBackdrop}>
+            <div style={styles.modalContent}>
+                <h2>Offer Scholarship: {recruit.name}</h2>
+                <p style={{ fontSize: '0.75rem', color: '#555' }}>Choose a pitch type. This can change how the recruit evaluates your offer.</p>
+
+                <div style={{ margin: '15px 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {options.map(opt => (
+                        <label key={opt.value} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                            <input
+                                type="radio"
+                                value={opt.value}
+                                checked={pitchType === opt.value}
+                                onChange={() => setPitchType(opt.value)}
+                            />
+                            <div>
+                                <div style={{ fontWeight: 'bold' }}>{opt.label}</div>
+                                <div style={{ fontSize: '0.7rem', color: '#666' }}>{opt.desc}</div>
+                            </div>
+                        </label>
+                    ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button style={styles.smallButton} onClick={onClose}>Cancel</button>
+                    <button style={{ ...styles.smallButton, backgroundColor: '#4CAF50', color: '#fff' }} onClick={handleSubmit}>Make Offer</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const RecruitingAnalyticsModal = ({ recruits, allTeams, userTeam, gameInSeason, onClose }: { recruits: Recruit[]; allTeams: Team[]; userTeam: Team; gameInSeason: number; onClose: () => void }) => {
+    const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
+
+    const metrics = useMemo(() => {
+        const top100 = recruits.filter(r => typeof r.nationalRank === 'number' && r.nationalRank <= 100);
+        const topPool = top100.length ? top100 : recruits.slice().sort((a, b) => (a.overall * 0.7 + a.potential * 0.3) - (b.overall * 0.7 + b.potential * 0.3)).slice(-100);
+
+        const committed = (r: Recruit) => Boolean(r.verbalCommitment) || ['SoftCommit', 'HardCommit', 'Signed'].includes(r.recruitmentStage || '');
+        const committedTop = topPool.filter(committed).length;
+
+        const offersCount = (r: Recruit) => (r.cpuOffers?.length || 0) + (r.userHasOffered ? 1 : 0);
+        const avgOffersTop = topPool.length ? topPool.reduce((s, r) => s + offersCount(r), 0) / topPool.length : 0;
+
+        const shortlistSizes = topPool.map(r => {
+            const offerNames = [...(r.cpuOffers || []), ...(r.userHasOffered ? [userTeam.name] : [])];
+            const details = offerNames
+                .map(name => {
+                    const team = teamsByName.get(name);
+                    if (!team) return null;
+                    return { name, score: calculateRecruitInterestScore(r, team, { gameInSeason }) };
+                })
+                .filter(Boolean) as { name: string; score: number }[];
+            if (!details.length) return 0;
+            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10 });
+            return shortlist.length;
+        }).filter(n => n > 0);
+        const avgShortlist = shortlistSizes.length ? shortlistSizes.reduce((a, b) => a + b, 0) / shortlistSizes.length : 0;
+
+        const stageCounts = recruits.reduce((acc, r) => {
+            const stage = r.recruitmentStage || (r.verbalCommitment ? 'HardCommit' : 'Open');
+            acc[stage] = (acc[stage] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+
+        const reopenCount = recruits.filter(r => (r.lastRecruitingNews || '').toLowerCase().includes('reopened')).length;
+
+        return {
+            topPoolSize: topPool.length,
+            committedTop,
+            committedTopPct: topPool.length ? (committedTop / topPool.length) * 100 : 0,
+            avgOffersTop,
+            avgShortlist,
+            stageCounts,
+            reopenCount,
+        };
+    }, [recruits, teamsByName, userTeam.name, gameInSeason]);
+
+    return (
+        <div style={styles.modalBackdrop}>
+            <div style={{ ...styles.modalContent, maxWidth: '900px' }}>
+                <button onClick={onClose} style={styles.modalCloseButton}>X</button>
+                <h2 style={{ marginTop: 0 }}>Recruiting Analytics</h2>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                    <div><strong>Top-{metrics.topPoolSize} committed:</strong> {metrics.committedTop} ({metrics.committedTopPct.toFixed(1)}%)</div>
+                    <div><strong>Avg offers (top):</strong> {metrics.avgOffersTop.toFixed(1)}</div>
+                    <div><strong>Avg shortlist size (top):</strong> {metrics.avgShortlist.toFixed(1)}</div>
+                    <div><strong>Reopens:</strong> {metrics.reopenCount}</div>
+                </div>
+                <div style={{ marginTop: '12px', fontSize: '0.8rem' }}>
+                    <h4 style={{ margin: '10px 0 6px 0' }}>Stage Breakdown</h4>
+                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                        {Object.entries(metrics.stageCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                            <li key={k}>{k}: {v}</li>
+                        ))}
+                    </ul>
+                </div>
             </div>
         </div>
     );
@@ -9586,8 +10166,52 @@ const SettingsModal = ({
     );
 };
 
-const OffersModal = ({ recruit, userTeamName, allTeams, gameInSeason, onClose }: { recruit: Recruit; userTeamName: string; allTeams: Team[]; gameInSeason: number; onClose: () => void; }) => {
-    const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
+		const OffersModal = ({ recruit, userTeamName, allTeams, gameInSeason, onOpenRecruitId, contactPointsUsed, contactPointsMax, scoutLevel, actionsDisabled, onContactRecruit, onOfferScholarship, onPullOffer, onCoachVisit, onScheduleOfficialVisit, onScout, onNegativeRecruit, onClose }: { recruit: Recruit; userTeamName: string; allTeams: Team[]; gameInSeason: number; onOpenRecruitId?: (recruitId: string) => void; contactPointsUsed?: number; contactPointsMax?: number; scoutLevel?: number; actionsDisabled?: boolean; onContactRecruit?: () => void; onOfferScholarship?: () => void; onPullOffer?: () => void; onCoachVisit?: () => void; onScheduleOfficialVisit?: () => void; onScout?: () => void; onNegativeRecruit?: () => void; onClose: () => void; }) => {
+		    return (
+		        <RecruitOfferDetailsModal
+		            recruit={recruit}
+		            userTeamName={userTeamName}
+		            allTeams={allTeams}
+		            gameInSeason={gameInSeason}
+		            onOpenRecruit={onOpenRecruitId}
+		            contactPointsUsed={contactPointsUsed}
+		            contactPointsMax={contactPointsMax}
+		            scoutLevel={scoutLevel}
+		            actionsDisabled={actionsDisabled}
+		            onContactRecruit={onContactRecruit}
+		            onOfferScholarship={onOfferScholarship}
+		            onPullOffer={onPullOffer}
+		            onCoachVisit={onCoachVisit}
+		            onScheduleOfficialVisit={onScheduleOfficialVisit}
+		            onScout={onScout}
+		            onNegativeRecruit={onNegativeRecruit}
+		            onClose={onClose}
+		        />
+		    );
+
+		    const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
+		    const [showDebug, setShowDebug] = useState(false);
+		    const [showLongshots, setShowLongshots] = useState(false);
+		    const [sensitivity, setSensitivity] = useState(85);
+		    const temperature = useMemo(() => clamp(15 - sensitivity * 0.13, 2.2, 10), [sensitivity]);
+		
+		    const shortlistPalette = ['#2563eb', '#16a34a', '#7c3aed', '#f59e0b', '#dc2626', '#0ea5e9', '#0891b2', '#db2777'];
+		    const colorForTeam = (teamName: string, fallbackIndex: number): string => {
+		        const tc = (SCHOOL_COLORS as Record<string, TeamColors | undefined>)[teamName];
+		        const preferred = tc?.primary && tc.primary.toUpperCase() !== '#FFFFFF' ? tc.primary : tc?.secondary;
+		        return preferred || shortlistPalette[fallbackIndex % shortlistPalette.length]!;
+		    };
+	
+	    const pitchLabel = (teamName: string) => {
+	        const history = recruit.offerHistory || [];
+	        for (let i = history.length - 1; i >= 0; i--) {
+	            const entry = history[i]!;
+	            if (entry.teamName !== teamName) continue;
+	            if (entry.revoked) return null;
+	            return entry.pitchType;
+	        }
+	        return null;
+	    };
 
     const powerRankings = useMemo(() => {
         const ranks = new Map<string, number>();
@@ -9597,63 +10221,411 @@ const OffersModal = ({ recruit, userTeamName, allTeams, gameInSeason, onClose }:
                 ranks.set(team.name, index + 1);
             });
         return ranks;
-    }, [allTeams]);
+	    }, [allTeams]);
 
-    const allOfferDetails = recruit.cpuOffers.map(teamName => {
-        const team = teamsByName.get(teamName);
-        return {
-            name: teamName,
-            value: team ? calculateRecruitInterestScore(recruit, team, { gameInSeason }) : 0,
-            prestige: team ? team.prestige : 0,
-            rank: team ? powerRankings.get(team.name) : undefined,
-        }
-    });
-    
-    if (recruit.userHasOffered) {
-        const userTeam = teamsByName.get(userTeamName);
-        allOfferDetails.push({
-            name: userTeamName,
-            value: recruit.interest,
-            prestige: userTeam ? userTeam.prestige : 0,
-            rank: userTeam ? powerRankings.get(userTeam.name) : undefined,
-        });
-    }
+	    const offerNames = [...recruit.cpuOffers, ...(recruit.userHasOffered ? [userTeamName] : [])];
+	    const rawOffers = offerNames.map(teamName => {
+	        const team = teamsByName.get(teamName);
+	        const breakdown = team ? calculateRecruitInterestBreakdown(recruit, team, { gameInSeason }) : null;
+	        const score = breakdown ? breakdown.score : 0;
+	        return {
+	            name: teamName,
+	            score,
+	            prestige: team ? team.prestige : 0,
+	            rank: team ? powerRankings.get(team.name) : undefined,
+	            pitchType: breakdown?.pitchType ?? pitchLabel(teamName),
+	            whyBadges: breakdown?.whyBadges ?? (team ? getRecruitWhyBadges(recruit, team, { gameInSeason }) : []),
+	            debug: breakdown,
+	        };
+	    });
 
-    allOfferDetails.sort((a, b) => b.value - a.value);
+		    const sortedRawOffers = [...rawOffers].sort((a, b) => b.score - a.score);
+		    const { shortlist, shares } = buildRecruitOfferShortlist(
+		        sortedRawOffers.map(o => ({ name: o.name, score: o.score })),
+		        { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature }
+		    );
+	    const shortlistNames = new Set(shortlist.map(o => o.name));
+	    const scoreLeaderName = shortlist[0]?.name ?? null;
+	    const shareLeaderName = (() => {
+	        let bestName: string | null = null;
+	        let bestShare = -Infinity;
+	        shortlist.forEach(o => {
+	            const share = shares.get(o.name);
+	            if (share == null) return;
+	            if (share > bestShare) {
+	                bestShare = share;
+	                bestName = o.name;
+	            }
+	        });
+	        return bestName ?? scoreLeaderName;
+	    })();
+	    const leaderShare = shareLeaderName ? shares.get(shareLeaderName) : undefined;
+	
+	    const shortlistOfferDetails = sortedRawOffers
+	        .filter(o => shortlistNames.has(o.name))
+		        .map(o => {
+		            const share = shares.get(o.name);
+		            const interestPct = share ?? 0;
+		            const interestLabel = share == null || share < 1 ? '<1%' : `${Math.round(share)}%`;
+		            const tier = o.name === shareLeaderName
+		                ? 'Leader'
+		                : (leaderShare != null && leaderShare > 0 ? (interestPct >= leaderShare * 0.65 ? 'In The Mix' : 'Chasing') : (interestPct >= 16 ? 'In The Mix' : 'Chasing'));
+		            return { ...o, interestPct, interestLabel, tier };
+		        });
+	
+		    const longshotOfferDetails = sortedRawOffers
+		        .filter(o => !shortlistNames.has(o.name))
+		        .map(o => ({ ...o, interestPct: 0, interestLabel: '<1%', tier: 'Longshot' }));
+		
+		    type OfferView = (typeof rawOffers)[number] & { interestPct: number; interestLabel: string; tier: string };
+		
+		    const interestSorted = [...shortlistOfferDetails].sort((a, b) => b.interestPct - a.interestPct);
+		    const topLeader = interestSorted[0];
+		    const topRunnerUp = interestSorted[1];
+		    const leaderDelta = topLeader && topRunnerUp ? Math.max(0, topLeader.interestPct - topRunnerUp.interestPct) : null;
+		
+		    const userOfferName = recruit.userHasOffered ? userTeamName : null;
+		    const userOffer = userOfferName ? [...shortlistOfferDetails, ...longshotOfferDetails].find(o => o.name === userOfferName) : undefined;
+		    const leaderOffer = shareLeaderName ? shortlistOfferDetails.find(o => o.name === shareLeaderName) : undefined;
+		    const userShareRank = userOfferName ? (interestSorted.findIndex(o => o.name === userOfferName) + 1) : 0;
+		    const shareGapVsLeader = leaderOffer && userOffer ? Math.max(0, leaderOffer.interestPct - userOffer.interestPct) : null;
+		    const scoreGapVsLeader = leaderOffer && userOffer ? Math.max(0, leaderOffer.score - userOffer.score) : null;
+		
+		    const motivationItems = [
+		        { key: 'playingTime', label: 'Playing Time' },
+		        { key: 'nil', label: 'NIL' },
+		        { key: 'exposure', label: 'Exposure' },
+		        { key: 'proximity', label: 'Proximity' },
+		        { key: 'development', label: 'Development' },
+		        { key: 'academics', label: 'Academics' },
+		        { key: 'relationship', label: 'Relationships' },
+		    ] as const;
+		
+		    const tierStyle = (tier: string): { fill: string; badgeBg: string; badgeText: string } => {
+		        if (tier === 'Leader') return { fill: '#2e7d32', badgeBg: '#2e7d32', badgeText: '#fff' };
+		        if (tier === 'In The Mix') return { fill: '#1565c0', badgeBg: '#1565c0', badgeText: '#fff' };
+		        if (tier === 'Chasing') return { fill: '#6d4c41', badgeBg: '#6d4c41', badgeText: '#fff' };
+		        return { fill: '#9ca3af', badgeBg: '#e5e7eb', badgeText: '#111827' };
+		    };
+		
+		    const OfferCard = ({ offer }: { offer: OfferView }) => {
+		        const style = tierStyle(offer.tier);
+		        const barPct = offer.interestPct > 0 ? Math.max(offer.interestPct, 1) : 0;
+		        return (
+		            <div style={{
+		                border: '1px solid #d6d6d6',
+		                borderRadius: '12px',
+		                padding: '10px 12px',
+		                background: '#ffffff',
+		                boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+		                display: 'flex',
+		                flexDirection: 'column',
+		                gap: '8px',
+		            }}>
+		                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+		                    <div style={{ minWidth: 0 }}>
+		                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+		                            <span style={{ background: style.badgeBg, color: style.badgeText, borderRadius: '999px', padding: '2px 8px', fontSize: '0.65rem', fontWeight: 'bold' }}>
+		                                {offer.tier}
+		                            </span>
+		                            <span style={{ fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={offer.name}>
+		                                {offer.name}{offer.rank ? ` (#${offer.rank})` : ''}
+		                            </span>
+		                        </div>
+		                        <div style={{ fontSize: '0.7rem', color: '#444', marginTop: '2px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+		                            <span>Pres: <strong>{offer.prestige}</strong></span>
+		                            {offer.pitchType ? <span>Pitch: <strong>{offer.pitchType}</strong></span> : null}
+		                        </div>
+		                        {offer.whyBadges?.length ? (
+		                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+		                                {offer.whyBadges.map((b: string) => (
+		                                    <span key={b} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px', fontSize: '0.65rem', color: '#111827' }}>
+		                                        {b}
+		                                    </span>
+		                                ))}
+		                            </div>
+		                        ) : null}
+		                    </div>
+		                    <div style={{ textAlign: 'right', minWidth: '90px' }}>
+		                        <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: offer.tier === 'Leader' ? '#2e7d32' : '#111827' }}>
+		                            {offer.interestLabel}
+		                        </div>
+		                        <div style={{ fontSize: '0.65rem', color: '#666' }}>Interest</div>
+		                    </div>
+		                </div>
+		                <div style={{ width: '100%', background: '#eaeaea', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+		                    <div style={{ width: `${barPct}%`, background: style.fill, height: '100%' }} />
+		                </div>
+		                {offer.debug && (
+		                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', fontSize: '0.68rem', color: '#4b5563' }}>
+		                        <div title="Overall fit score">
+		                            Fit <strong style={{ color: '#111827' }}>{Math.round(offer.debug.score)}</strong>
+		                        </div>
+		                        <div title="Brand/region awareness (0-100)">
+		                            Aware <strong style={{ color: '#111827' }}>{Math.round(offer.debug.awarenessScore)}</strong>
+		                        </div>
+		                        <div title="Estimated distance (miles)">
+		                            Miles <strong style={{ color: '#111827' }}>{Math.round(offer.debug.estDistanceMiles)}</strong>
+		                        </div>
+		                        <div title="Momentum from recent actions (-20 to +20)">
+		                            Mom{' '}
+		                            <strong style={{ color: offer.debug.momentum >= 0 ? '#166534' : '#991b1b' }}>
+		                                {offer.debug.momentum >= 0 ? `+${offer.debug.momentum}` : offer.debug.momentum}
+		                            </strong>
+		                        </div>
+		                    </div>
+		                )}
+		                {showDebug && offer.debug && (
+		                    <div style={{ fontSize: '0.68rem', color: '#555', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+		                        <span>Score: <strong>{offer.debug.score}</strong></span>
+		                        <span>Awareness: <strong>{offer.debug.awarenessScore}</strong></span>
+		                        <span>Dist: <strong>{offer.debug.estDistanceMiles}</strong> mi</span>
+		                        <span>Momentum: <strong>{offer.debug.momentum}</strong></span>
+		                    </div>
+		                )}
+		            </div>
+		        );
+		    };
 
-    return (
-        <div style={styles.modalOverlay} onClick={onClose}>
-            <div style={{ ...styles.modalContent, maxWidth: '1100px', width: '95vw' }} onClick={e => e.stopPropagation()}>
-                <button onClick={onClose} style={styles.modalCloseButton}>X</button>
-                <h3 style={{ ...styles.title, fontSize: '1.2rem', textShadow: '2px 2px 0px #808080', color: 'black', marginBottom: '15px' }}>
-                    Offers for {recruit.name}
-                </h3>
-                {allOfferDetails.length > 0 ? (
-                    <ul style={{ maxHeight: '200px', overflowY: 'auto', padding: 0, listStyle: 'none' }}>
-                        {allOfferDetails.map(offer => (
-                            <li key={offer.name} style={{fontSize: '0.7rem', display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                <span>
-                                    {offer.name}
-                                    {offer.rank ? ` (#${offer.rank})` : ''}
-                                    {' '}
-                                    (Pres: {offer.prestige})
-                                </span>
-                                <span>Interest: {offer.value}</span>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <p>No offers yet.</p>
-                )}
-                {recruit.verbalCommitment && (
-                    <p style={{marginTop: '15px', fontSize: '0.8rem', fontWeight: 'bold'}}>
-                        Verbally Committed: {recruit.verbalCommitment}
-                    </p>
-                )}
-            </div>
-        </div>
-    );
-};
+		    return (
+		        <div style={styles.modalOverlay} onClick={onClose}>
+		            <div
+		                style={{
+		                    ...styles.modalContent,
+		                    maxWidth: '1520px',
+		                    width: '98vw',
+		                    maxHeight: '92vh',
+		                    overflow: 'hidden',
+		                    padding: '16px',
+		                    background: '#f5f5f5',
+		                }}
+		                onClick={e => e.stopPropagation()}
+		            >
+		                <button onClick={onClose} style={styles.modalCloseButton}>X</button>
+		                <h3 style={{ ...styles.title, fontSize: '1.2rem', textShadow: '2px 2px 0px #808080', color: 'black', marginBottom: '10px' }}>
+		                    Offers for {recruit.name}
+		                </h3>
+		                {(recruit.hometownCity || recruit.hometownState || recruit.highSchoolName) && (
+		                    <p style={{ fontSize: '0.75rem', color: '#555', marginTop: '-6px', marginBottom: '8px' }}>
+		                        {[recruit.hometownCity, recruit.hometownState].filter(Boolean).join(', ')}
+		                        {recruit.highSchoolName ? ` - ${recruit.highSchoolName}` : ''}
+		                    </p>
+		                )}
+		
+		                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '0.7rem', color: '#333', marginBottom: '8px' }}>
+		                    {recruit.nationalRank && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Nat</strong> #{recruit.nationalRank}</span>}
+		                    {recruit.positionalRank && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Pos</strong> #{recruit.positionalRank}</span>}
+		                    {recruit.recruitmentStage && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Stage</strong> {recruit.recruitmentStage}</span>}
+		                    {typeof recruit.height === 'number' && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Ht</strong> {formatPlayerHeight(recruit.height)}</span>}
+		                    {recruit.weight && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Wt</strong> {recruit.weight} lbs</span>}
+		                    {recruit.wingspan && <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>WS</strong> {recruit.wingspan}&quot;</span>}
+		                    {recruit.playStyleTags?.length ? <span style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '999px', padding: '3px 8px' }}><strong>Tags</strong> {recruit.playStyleTags.slice(0, 3).join(', ')}</span> : null}
+		                </div>
+		
+		                {recruit.lastRecruitingNews && (
+		                    <p style={{ fontSize: '0.75rem', color: '#111827', background: '#fff', border: '1px solid #ddd', padding: '8px 10px', borderRadius: '12px', marginBottom: '10px' }}>
+		                        {recruit.lastRecruitingNews}
+		                    </p>
+		                )}
+		
+		                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
+		                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', color: '#333' }}>
+		                        <input type="checkbox" checked={showDebug} onChange={e => setShowDebug(e.target.checked)} />
+		                        Debug
+		                    </label>
+		                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.7rem', color: '#333' }}>
+		                        <span style={{ fontWeight: 'bold' }}>Interest Spread</span>
+		                        <input type="range" min={0} max={100} value={sensitivity} onChange={e => setSensitivity(parseInt(e.target.value))} />
+		                        <span style={{ width: '34px', textAlign: 'right' }}>{sensitivity}</span>
+		                    </label>
+		                    <span style={{ fontSize: '0.7rem', color: '#666' }} title="Lower temperature = more separation in shares">
+		                        temp {temperature.toFixed(1)}
+		                    </span>
+		                    <span style={{ fontSize: '0.7rem', color: '#666' }} title="These percentages are a share of the shortlist only (they sum to ~100%).">
+		                        (shortlist share)
+		                    </span>
+		                    <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>
+		                        Fit score → shortlist share (higher fit usually means higher share).
+		                    </span>
+		                </div>
+		
+		                <div style={{ display: 'flex', gap: '12px', height: 'calc(92vh - 250px)', minHeight: '420px' }}>
+		                    <div style={{ flex: '1 1 62%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+		                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#111827' }}>Shortlist</div>
+		                        {userOfferName ? (
+		                            <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '10px 12px' }}>
+		                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+		                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#111827' }}>
+		                                        Your Standing: {userOfferName}
+		                                    </div>
+		                                    <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+		                                        {userOffer && userOffer.tier === 'Longshot' ? 'Not in shortlist (showing as longshot).' : 'In shortlist.'}
+		                                    </div>
+		                                </div>
+		                                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px', fontSize: '0.72rem', color: '#374151' }}>
+		                                    <span>
+		                                        Your interest: <strong>{recruit.interest}</strong>/100 <span style={{ color: '#6b7280' }}>(absolute)</span>
+		                                    </span>
+		                                    <span>
+		                                        Share: <strong>{userOffer ? userOffer.interestLabel : '<1%'}</strong>
+		                                        {userShareRank > 0 ? <span style={{ color: '#6b7280' }}> (#{userShareRank})</span> : null}
+		                                    </span>
+		                                    {leaderOffer && userOffer ? (
+		                                        <span>
+		                                            Behind leader: <strong>{shareGapVsLeader != null ? `${shareGapVsLeader.toFixed(1)}%` : '—'}</strong> share,{' '}
+		                                            <strong>{scoreGapVsLeader != null ? Math.round(scoreGapVsLeader) : '—'}</strong> fit
+		                                        </span>
+		                                    ) : null}
+		                                    {userOffer?.pitchType ? <span>Pitch: <strong>{userOffer.pitchType}</strong></span> : null}
+		                                    {userOffer?.debug ? <span>Miles: <strong>{Math.round(userOffer.debug.estDistanceMiles)}</strong></span> : null}
+		                                    {userOffer?.debug ? (
+		                                        <span>
+		                                            Momentum:{' '}
+		                                            <strong style={{ color: userOffer.debug.momentum >= 0 ? '#166534' : '#991b1b' }}>
+		                                                {userOffer.debug.momentum >= 0 ? `+${userOffer.debug.momentum}` : userOffer.debug.momentum}
+		                                            </strong>
+		                                        </span>
+		                                    ) : null}
+		                                </div>
+		                            </div>
+		                        ) : null}
+		                        {shortlistOfferDetails.length ? (
+		                            <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '10px 12px' }}>
+		                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+		                                    <div style={{ fontSize: '0.75rem', color: '#111827', fontWeight: 'bold' }}>
+		                                        {topLeader ? `Leader: ${topLeader.name} (${topLeader.interestLabel})` : 'Leader: —'}
+		                                    </div>
+		                                    <div style={{ fontSize: '0.75rem', color: '#374151' }}>
+		                                        {topRunnerUp ? `Runner-up: ${topRunnerUp.name} (${topRunnerUp.interestLabel})` : 'Runner-up: —'}
+		                                        {leaderDelta != null ? <span style={{ marginLeft: '8px', color: '#6b7280' }}>Δ {leaderDelta.toFixed(1)}%</span> : null}
+		                                    </div>
+		                                </div>
+		                                <div style={{ marginTop: '8px', height: '12px', borderRadius: '999px', overflow: 'hidden', display: 'flex', background: '#eaeaea' }}>
+		                                    {interestSorted.map((o, idx) => (
+		                                        <div
+		                                            key={o.name}
+		                                            title={`${o.name} ${o.interestLabel}`}
+		                                            style={{
+		                                                width: `${Math.max(0, o.interestPct)}%`,
+		                                                background: colorForTeam(o.name, idx),
+		                                                minWidth: o.interestPct > 0 ? '2px' : undefined,
+		                                            }}
+		                                        />
+		                                    ))}
+		                                </div>
+		                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+		                                    {interestSorted.slice(0, 5).map((o, idx) => (
+		                                        <span key={o.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px', fontSize: '0.65rem', color: '#111827' }}>
+		                                            <span style={{ width: '10px', height: '10px', borderRadius: '999px', background: colorForTeam(o.name, idx), display: 'inline-block' }} />
+		                                            {o.name} <span style={{ color: '#6b7280' }}>{o.interestLabel}</span>
+		                                        </span>
+		                                    ))}
+		                                </div>
+		                            </div>
+		                        ) : null}
+		                        <div style={{ overflowY: 'auto', paddingRight: '6px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '10px' }}>
+		                            {shortlistOfferDetails.length ? shortlistOfferDetails.map((offer: OfferView) => (
+		                                <OfferCard key={offer.name} offer={offer} />
+		                            )) : <div style={{ fontSize: '0.8rem', color: '#555' }}>No offers yet.</div>}
+		                        </div>
+		                        {longshotOfferDetails.length > 0 && (
+		                            <div style={{ marginTop: '6px' }}>
+		                                <button style={{ ...styles.smallButton, width: 'fit-content' }} onClick={() => setShowLongshots(v => !v)}>
+		                                    {showLongshots ? 'Hide' : 'Show'} Longshots ({longshotOfferDetails.length})
+		                                </button>
+		                                {showLongshots && (
+		                                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+		                                        {longshotOfferDetails.map((offer: OfferView) => (
+		                                            <div key={offer.name} style={{ fontSize: '0.72rem', color: '#444', background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+		                                                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={offer.name}>
+		                                                    {offer.name}{offer.rank ? ` (#${offer.rank})` : ''} (Pres: {offer.prestige}{offer.pitchType ? ` - ${offer.pitchType}` : ''})
+		                                                </span>
+		                                                <span style={{ color: '#666' }}>{offer.interestLabel}</span>
+		                                            </div>
+		                                        ))}
+		                                    </div>
+		                                )}
+		                            </div>
+		                        )}
+		                    </div>
+		
+		                    <div style={{ flex: '1 1 38%', minWidth: 0, overflowY: 'auto', paddingRight: '6px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+		                        <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '10px 12px' }}>
+		                            <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>Recruit Profile</div>
+		                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.7rem', color: '#374151', marginBottom: '10px' }}>
+		                                {recruit.archetype ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Archetype</strong> {recruit.archetype}</span> : null}
+		                                {recruit.dealbreaker ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Dealbreaker</strong> {recruit.dealbreaker}</span> : null}
+		                                {recruit.nilPriority ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>NIL</strong> {recruit.nilPriority}</span> : null}
+		                                {typeof recruit.resilience === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Resilience</strong> {recruit.resilience}</span> : null}
+		                                {typeof recruit.coachability === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Coachability</strong> {recruit.coachability}</span> : null}
+		                                {typeof recruit.hypeLevel === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Hype</strong> {recruit.hypeLevel}</span> : null}
+		                            </div>
+		                            <div style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '6px' }}>What Matters (weights)</div>
+		                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+		                                {motivationItems.map(item => {
+		                                    const value = recruit.motivations ? recruit.motivations[item.key] : 50;
+		                                    return (
+		                                        <div key={item.key} style={{ minWidth: 0 }}>
+		                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: '#374151', marginBottom: '2px' }}>
+		                                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+		                                                <span style={{ color: '#6b7280' }}>{value}</span>
+		                                            </div>
+		                                            <div style={{ width: '100%', background: '#eef2f7', borderRadius: '999px', height: '8px', overflow: 'hidden' }}>
+		                                                <div style={{ width: `${clamp(value, 0, 100)}%`, background: '#2563eb', height: '100%' }} />
+		                                            </div>
+		                                        </div>
+		                                    );
+		                                })}
+		                            </div>
+		                        </div>
+		                        {(recruit.offerHistory?.length || recruit.visitHistory?.length) ? (
+		                            <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '10px 12px' }}>
+		                                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>Timeline</div>
+		                                <div style={{ fontSize: '0.72rem', color: '#444' }}>
+		                                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Offers</div>
+		                                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+		                                        {[...(recruit.offerHistory || [])].slice(-10).reverse().map((e, idx) => (
+		                                            <li key={`${e.teamName}-${e.week}-${idx}`} style={{ opacity: e.revoked ? 0.7 : 1 }}>
+		                                                Week {e.week}: {e.teamName} — {e.pitchType}{e.revoked ? ' (revoked)' : ''}
+		                                            </li>
+		                                        ))}
+		                                    </ul>
+		                                    <div style={{ fontWeight: 'bold', margin: '10px 0 4px 0' }}>Visits</div>
+		                                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+		                                        {[...(recruit.visitHistory || [])].slice(-10).reverse().map((e, idx) => (
+		                                            <li key={`${e.teamName}-${e.week}-${idx}`}>
+		                                                Week {e.week}: {e.kind} — {e.teamName}{e.outcome ? ` (${e.outcome})` : ''}
+		                                            </li>
+		                                        ))}
+		                                    </ul>
+		                                </div>
+		                            </div>
+		                        ) : null}
+		
+		                        {recruit.relationships?.length ? (
+		                            <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '12px', padding: '10px 12px' }}>
+		                                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>Relationships</div>
+		                                <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.72rem', color: '#444' }}>
+		                                    {recruit.relationships.map((rel, idx) => (
+		                                        <li key={`${rel.personId}-${idx}`}>
+		                                            {rel.type}: {rel.displayName}{rel.notes ? ` - ${rel.notes}` : ''}
+		                                        </li>
+		                                    ))}
+		                                </ul>
+		                            </div>
+		                        ) : null}
+		                    </div>
+		                </div>
+		
+		                {recruit.verbalCommitment && (
+		                    <p style={{marginTop: '10px', fontSize: '0.8rem', fontWeight: 'bold'}}>
+		                        Verbally Committed: {recruit.verbalCommitment}
+		                    </p>
+		                )}
+		            </div>
+		        </div>
+		    );
+	};
 
 
 
@@ -12795,8 +13767,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     linkButton: {
         background: 'none',
         border: 'none',
-        color: '#0000EE',
-        textDecoration: 'underline',
+        color: '#111827',
+        textDecoration: 'none',
         cursor: 'pointer',
         fontFamily: "'Press Start 2P', cursive",
         fontSize: '0.6rem',

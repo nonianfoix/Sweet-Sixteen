@@ -225,6 +225,37 @@ export interface TransferPortalState {
 export type RecruitArchetype = 'Mercenary' | 'HometownHero' | 'ProcessTrustor' | 'FameSeeker';
 export type Dealbreaker = 'NIL' | 'PlayingTime' | 'Proximity' | 'Academics' | 'None';
 export type VisitStatus = 'None' | 'Scheduled' | 'Completed' | 'Cancelled';
+export type OfferPitchType = 'Standard' | 'EarlyPush' | 'NILHeavy' | 'PlayingTimePromise' | 'LocalAngle' | 'AcademicPitch';
+export type RecruitingStage = 'Open' | 'Narrowing' | 'SoftCommit' | 'HardCommit' | 'Signed';
+
+export type AthleticismTier = 'A' | 'B' | 'C' | 'D';
+
+export type RelationshipType = 'Twin' | 'Sibling' | 'Cousin';
+export type RelationshipSportLevel = 'HS' | 'College' | 'NBA';
+export type RelationshipLink = {
+  type: RelationshipType;
+  personId: string; // recruit id / player id / nba player id
+  displayName: string;
+  sportLevel: RelationshipSportLevel;
+  teamName?: string;
+  notes?: string;
+};
+
+export type RecruitOfferHistoryEntry = {
+  teamName: string;
+  week: number;
+  pitchType: OfferPitchType;
+  source: 'User' | 'CPU';
+  revoked?: boolean;
+};
+
+export type RecruitVisitHistoryEntry = {
+  teamName: string;
+  week: number;
+  kind: 'Home' | 'Official';
+  outcome?: 'Positive' | 'Neutral' | 'Negative';
+  notes?: string;
+};
 
 export interface Pipeline {
     state: string;
@@ -256,13 +287,44 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   dealbreaker: Dealbreaker;
   visitStatus: VisitStatus;
   visitWeek?: number;
+  lastUserContactWeek?: number;
   homeState: string;
   state: string;
   isGem?: boolean;
   isBust?: boolean;
 
   // New Fields for Enhanced Recruiting
+  hometownCity?: string;
+  hometownState?: string;
+  highSchoolName?: string;
+  highSchoolType?: 'Public' | 'Private' | 'Prep';
+  region?: string;
+  metroArea?: string;
+  nationalRank?: number;
+  positionalRank?: number;
+  regionalRank?: number;
+  rankSource?: string;
+  playStyleTags?: string[];
+  wingspan?: number; // inches
+  weight?: number; // lbs
+  athleticismTier?: AthleticismTier;
+  injuryRisk?: number; // 0-100
+  durability?: number; // 0-100
+  coachability?: number; // 0-100
+  hypeLevel?: number; // 0-100
+  favoredCoachStyle?: CoachStyle;
+  familyInfluenceNote?: string;
+
+  offerHistory?: RecruitOfferHistoryEntry[];
+  visitHistory?: RecruitVisitHistoryEntry[];
   motivations: RecruitMotivation;
+  teamMomentum?: Record<string, number>;
+  recruitmentStage?: RecruitingStage;
+  commitWeek?: number;
+  signWeek?: number;
+  lastRecruitingNews?: string;
+  relationships?: RelationshipLink[];
+  familyLastNameGroupId?: string;
   softCommitment: boolean;
   resilience: number; // 0-100, difficulty to flip
 }
@@ -281,7 +343,7 @@ export type GameAction =
   | { type: 'SIMULATE_TRANSFER_PORTAL_DAY' }
   | { type: 'ADVANCE_TOURNAMENT_ROUND' }
   | { type: 'CONTACT_RECRUIT'; payload: { recruitId: string } }
-  | { type: 'OFFER_SCHOLARSHIP'; payload: { recruitId: string } }
+  | { type: 'OFFER_SCHOLARSHIP'; payload: { recruitId: string; pitchType?: OfferPitchType } }
   | { type: 'PULL_SCHOLARSHIP'; payload: { recruitId: string } }
   | { type: 'CUT_PLAYER'; payload: { playerId: string } }
   | { type: 'BULK_CUT_PLAYERS'; payload: { playerIds: string[] } }

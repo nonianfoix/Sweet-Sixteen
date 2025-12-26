@@ -481,7 +481,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({ state, userTeam, d
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                         <select 
-                                            style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.8rem' }}
+                                            style={{
+                                                padding: '0.55rem',
+                                                borderRadius: '8px',
+                                                border: `2px solid ${colors.primary}55`,
+                                                fontSize: '0.7rem',
+                                                fontFamily: "'Press Start 2P', 'Courier New', system-ui, sans-serif",
+                                                background: '#fff',
+                                            }}
                                             onChange={(e) => {
                                                 if (e.target.value) {
                                                     dispatch({ 
