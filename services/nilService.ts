@@ -31,6 +31,10 @@ const PERSONALITY_POOL: NilPersonalityTrait[] = [
     'DegreeSeeker',
     'OneAndDoneDNA',
     'LateBloomer',
+    'GymRat',
+    'FilmJunkie',
+    'Homebody',
+    'Wanderlust',
 ];
 
 const TRAIT_STAY_MODIFIERS: Record<NilPersonalityTrait, number> = {
@@ -40,9 +44,20 @@ const TRAIT_STAY_MODIFIERS: Record<NilPersonalityTrait, number> = {
     DegreeSeeker: 0.95,
     OneAndDoneDNA: 1.25,
     LateBloomer: 0.98,
+    GymRat: 0.94,
+    FilmJunkie: 0.96,
+    Homebody: 0.88,
+    Wanderlust: 1.08,
 };
 
-const TRAIT_MULTIYEAR_FAVOR: NilPersonalityTrait[] = ['LegacyBuilder', 'DegreeSeeker', 'LateBloomer'];
+const TRAIT_MULTIYEAR_FAVOR: NilPersonalityTrait[] = [
+    'LegacyBuilder',
+    'DegreeSeeker',
+    'LateBloomer',
+    'GymRat',
+    'FilmJunkie',
+    'Homebody',
+];
 
 const SPONSOR_PREFERRED_POSITIONS: Record<string, ('PG' | 'SG' | 'SF' | 'PF' | 'C')[]> = {
     Nike: ['PG', 'SG', 'SF'],
