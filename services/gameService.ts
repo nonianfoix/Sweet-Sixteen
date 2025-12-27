@@ -586,6 +586,15 @@ const getEffectivePotential = (player: Player): number => {
 const getDevelopmentRateForPlayer = (player: Player): number => {
     const base = clamp(player.developmentRate ?? 1, 0.6, 1.4);
     const dna: PlayerDevelopmentDNA = player.developmentDNA || 'Steady';
+    const personalityMultiplier = (() => {
+        const traits = player.nilPersonalityTraits ?? [];
+        return traits.reduce((multiplier, trait) => {
+            if (trait === 'GymRat') return multiplier * 1.08;
+            if (trait === 'FilmJunkie') return multiplier * 1.04;
+            if (trait === 'BrandExpansionist') return multiplier * 0.97;
+            return multiplier;
+        }, 1);
+    })();
 
     const year = player.year;
     const dnaMultiplier = (() => {
@@ -605,7 +614,7 @@ const getDevelopmentRateForPlayer = (player: Player): number => {
         return 1.0;
     })();
 
-    return clamp(base * dnaMultiplier, 0.6, 1.4);
+    return clamp(base * dnaMultiplier * personalityMultiplier, 0.6, 1.4);
 };
 
 const applyGameProgressionToPlayer = (player: Player): Player => {
@@ -1362,6 +1371,16 @@ export const createRecruit = (): Recruit => {
         communityEngagement: randomBetween(20, 85),
     };
 
+        if (personalityTrait === 'Homebody') {
+            motivations.proximity = clamp(motivations.proximity + randomBetween(12, 24), 0, 100);
+        } else if (personalityTrait === 'Wanderlust') {
+            motivations.proximity = clamp(motivations.proximity - randomBetween(15, 28), 0, 100);
+        } else if (personalityTrait === 'Family Feud') {
+            motivations.relationship = clamp(motivations.relationship - randomBetween(18, 32), 0, 100);
+        } else if (personalityTrait === 'Gym Rat') {
+            motivations.development = clamp(motivations.development + randomBetween(15, 30), 0, 100);
+        }
+
 	    // Hard dealbreakers can now be more logical
 	    let dealbreaker: Dealbreaker = pickRandom(['None', 'None', 'None', 'None']);
     if (motivations.proximity > 90) dealbreaker = pickRandom(['Proximity', 'Proximity', 'None']);
@@ -1463,6 +1482,10 @@ const PROSPECT_PERSONALITIES: ProspectPersonality[] = [
     'Academically Focused',
     'Local Hero',
     'Spotlight Seeker',
+    'Homebody',
+    'Wanderlust',
+    'Family Feud',
+    'Gym Rat',
 ];
 
 const NIL_PRIORITY_OPTIONS: RecruitNilPriority[] = [
@@ -4557,6 +4580,16 @@ const getTeamAcademicScore = (team: Team): number => {
     return clamp(endowment + supportBoost, 0, 100);
 };
 
+const getTeamDevelopmentScore = (team: Team): number => {
+    const trainingFacility = team.facilities?.training;
+    const quality = trainingFacility?.quality ?? 50;
+    const equipment = trainingFacility?.equipmentLevel ?? 5;
+    const staffDevSpend = team.budget?.allocations?.staffDevelopment ?? 0;
+    const staffDevBoost = clamp(staffDevSpend / 50000, 0, 1) * 18;
+    const facilityBoost = (equipment * 4) + (trainingFacility?.level ?? 3) * 3;
+    return clamp(quality * 0.6 + facilityBoost + staffDevBoost, 0, 100);
+};
+
 const getTeamMarketScore = (team: Team): number => {
     const base = team.prestige ?? 50;
     const donorBonus = team.wealth?.donorMomentum ?? 0;
@@ -4786,12 +4819,32 @@ export const estimateRecruitDistanceMilesToTeam = (recruit: Recruit, team: Team)
     return estimateDistanceMiles(getRecruitOriginStateCode(recruit), team.state, `${recruit.id}:${team.name}`);
 };
 
+const getPlayerHomeStateCode = (player: Player): string => {
+    return normalizeStateCode(player.homeState || '');
+};
+
+const getTransferDistancePreferenceScore = (player: Player, team: Team): number => {
+    if (!player.homeState) return 0;
+    const distance = estimateDistanceMiles(getPlayerHomeStateCode(player), team.state, `${player.id}:${team.name}:xfer`);
+    const closenessScore = clamp((900 - distance) / 900, -1, 1);
+    const traits = player.nilPersonalityTraits ?? [];
+    let bonus = 0;
+    if (traits.includes('Homebody')) bonus += closenessScore * 6;
+    if (traits.includes('HomegrownFavorite')) bonus += closenessScore * 4;
+    if (traits.includes('Wanderlust')) bonus += -closenessScore * 6;
+    return bonus;
+};
+
 const personalityInterestBonuses: Record<ProspectPersonality, (team: Team) => number> = {
     Loyal: team => getTeamCommunityScore(team) * 0.08,
     'NBA Bound': team => (team.prestige ?? 50) * 0.08 + getTeamMarketScore(team) * 0.03,
     'Academically Focused': team => getTeamAcademicScore(team) * 0.1,
     'Local Hero': team => getTeamCommunityScore(team) * 0.1,
     'Spotlight Seeker': team => getTeamMarketScore(team) * 0.08 + (team.prestige ?? 50) * 0.02,
+    Homebody: team => getTeamCommunityScore(team) * 0.05,
+    Wanderlust: team => getTeamMarketScore(team) * 0.06 + (team.prestige ?? 50) * 0.02,
+    'Family Feud': () => 0,
+    'Gym Rat': team => getTeamDevelopmentScore(team) * 0.08,
 };
 
 const nilPriorityInterestBonuses: Record<RecruitNilPriority, (team: Team) => number> = {
@@ -4836,6 +4889,15 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
         const strictness = clamp((recruit.fitStrictness ?? 50) / 100, 0, 1);
         const preferenceMultiplier = 0.9 + strictness * 0.35;
 	    const proximityFactor = (proximityScore - 50) * (0.15 + proximityWeight * 0.45) * preferenceMultiplier;
+        const personalityProximityBonus = (() => {
+            if (recruit.personalityTrait === 'Homebody') {
+                return (proximityScore - 50) * 0.25;
+            }
+            if (recruit.personalityTrait === 'Wanderlust') {
+                return (50 - proximityScore) * 0.25;
+            }
+            return 0;
+        })();
 
 	    // Awareness: how plausible is it that the recruit is paying attention to this program?
 	    const hype = clamp(recruit.hypeLevel ?? (recruit.stars >= 5 ? 90 : recruit.stars === 4 ? 70 : recruit.stars === 3 ? 55 : 40), 0, 100);
@@ -4987,6 +5049,7 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	        pipelineBonus +
 	        archetypeBonus +
 	        proximityFactor +
+            personalityProximityBonus +
 	        clamp(recruit.teamMomentum?.[team.name] ?? 0, -20, 20) -
 	        dealbreakerPenalty;
 
@@ -5194,6 +5257,11 @@ export const processTransferPortalOpen = (teams: Team[]): { teams: Team[], porta
             if (winPct < 0.4) chanceToLeave += 0.1;
 
             if (player.potential > player.overall + 5) chanceToLeave += 0.05;
+            const traits = player.nilPersonalityTraits ?? [];
+            if (traits.includes('Homebody') || traits.includes('LegacyBuilder')) chanceToLeave -= 0.04;
+            if (traits.includes('Wanderlust') || traits.includes('BrandExpansionist')) chanceToLeave += 0.05;
+            if (traits.includes('GymRat') || traits.includes('FilmJunkie')) chanceToLeave -= 0.02;
+            chanceToLeave = clamp(chanceToLeave, 0.01, 0.6);
 
             if (Math.random() < chanceToLeave && player.year !== 'Sr') {
                 if (team.isUserTeam) {
@@ -5262,6 +5330,7 @@ export const processTransferPortalDay = (teams: Team[], portalPlayers: Transfer[
                     const needScore = 1 / (1 + numAtPos);
                     const prestigeScore = team.prestige / 100;
                     let totalScore = needScore + prestigeScore;
+                    totalScore += getTransferDistancePreferenceScore(player, team) / 10;
 
                     // Apply Coach Skills (Portal Whisperer)
                     if (team.isUserTeam && userCoachSkills && userCoachSkills.includes('portal_whisperer')) {
@@ -5325,13 +5394,15 @@ const getPackageRelationshipMultiplier = (linkType: RelationshipType): number =>
 const getPackageBaseDisposition = (recruit: Recruit): number => {
     const relationshipWeight = clamp((recruit.motivations?.relationship ?? 50) / 100, 0, 1);
     const baseRandom = stableIntBetween(`${recruit.id}:pkgDisp`, -10, 10) / 100;
-    return clamp(0.35 + relationshipWeight * 0.35 + baseRandom, 0.15, 0.9);
+    const feudPenalty = recruit.personalityTrait === 'Family Feud' ? 0.18 : 0;
+    return clamp(0.35 + relationshipWeight * 0.35 + baseRandom - feudPenalty, 0.1, 0.9);
 };
 
 const getPackageIndependencePenalty = (recruit: Recruit): number => {
     const talentScore = getRecruitTalentScore(recruit);
     const archetypePenalty = recruit.archetype === 'Mercenary' || recruit.archetype === 'FameSeeker' ? 0.12 : 0;
-    return clamp(talentScore * 0.45 + archetypePenalty, 0, 0.65);
+    const personalityPenalty = recruit.personalityTrait === 'Family Feud' ? 0.15 : 0;
+    return clamp(talentScore * 0.45 + archetypePenalty + personalityPenalty, 0, 0.7);
 };
 
 

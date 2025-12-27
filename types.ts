@@ -102,7 +102,11 @@ export type NilPersonalityTrait =
     | 'HomegrownFavorite'
     | 'DegreeSeeker'
     | 'OneAndDoneDNA'
-    | 'LateBloomer';
+    | 'LateBloomer'
+    | 'GymRat'
+    | 'FilmJunkie'
+    | 'Homebody'
+    | 'Wanderlust';
 
 export type PlayerRole = 'Star Scorer' | 'Defensive Stopper' | 'Glue Guy' | 'Locker Room Leader' | 'Bench Warmer' | 'Volume Scorer' | 'Prospect' | 'Role Player';
 
@@ -114,7 +118,16 @@ export interface PlayerStreak {
     impact: Partial<Record<keyof Player['stats'], number>>; // Stat modifiers
 }
 
-export type ProspectPersonality = 'Loyal' | 'NBA Bound' | 'Academically Focused' | 'Local Hero' | 'Spotlight Seeker';
+export type ProspectPersonality =
+    | 'Loyal'
+    | 'NBA Bound'
+    | 'Academically Focused'
+    | 'Local Hero'
+    | 'Spotlight Seeker'
+    | 'Homebody'
+    | 'Wanderlust'
+    | 'Family Feud'
+    | 'Gym Rat';
 export type RecruitNilPriority = 'LongTermStability' | 'DraftStock' | 'AcademicSupport' | 'BrandExposure';
 
 export interface ProgramPreference {
