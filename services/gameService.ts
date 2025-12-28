@@ -29,6 +29,8 @@ import {
   SCHOOL_SPONSORS, INITIAL_SPONSORS, CONFERENCE_STRENGTH, ARENA_CAPACITIES as LEGACY_ARENA_CAPACITIES, SPONSOR_SLOGANS, SCHOOL_ENDOWMENT_OVERRIDES, NBA_TEAMS, INTERNATIONAL_PROGRAMS,
   US_STATES, SCHOOL_STATES
 } from '../constants';
+import { SCHOOL_LOCATIONS } from '../constants/schoolCoordinates';
+import { pickHometownAnchor } from '../constants/hometownAnchors';
 import { ARENA_CAPACITIES as AUTHORITATIVE_ARENA_CAPACITIES } from '../new_arena_capacities';
 import { NCAA_TOURNAMENT_CHAMPIONS } from '../realWorldData';
 import { REAL_NBA_PLAYERS } from '../data/realNbaPlayers';
@@ -65,6 +67,7 @@ import collegeSrsCsv from '../data/College SRS.csv?raw';
 export const randomBetween = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 export const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+export const normalizeInterest = (value: number): number => clamp(Math.round(value), 0, 100);
 
 type CollegeSrsEntry = { school: string; srs: number };
 
@@ -1184,11 +1187,18 @@ const buildHighSchoolName = (city: string): { name: string; type: Recruit['highS
         roll < 0.72 ? 'Public' : roll < 0.9 ? 'Private' : 'Prep';
 
     const suffix = pickRandom(HIGH_SCHOOL_SUFFIXES);
+    const first = pickRandom(FIRST_NAMES);
+    const last = pickRandom(LAST_NAMES);
     if (type === 'Public') {
-        return { name: `${city} ${suffix}`, type };
+        const patternRoll = Math.random();
+        if (patternRoll < 0.45) return { name: `${city} ${suffix}`, type };
+        if (patternRoll < 0.75) return { name: `${city} ${last} ${suffix}`, type };
+        return { name: `${city} ${first} ${last} ${suffix}`, type };
     }
     const prefix = pickRandom(HIGH_SCHOOL_PREFIXES);
-    return { name: `${prefix} ${city} ${suffix}`, type };
+    const patternRoll = Math.random();
+    if (patternRoll < 0.55) return { name: `${prefix} ${last} ${suffix}`, type };
+    return { name: `${prefix} ${first} ${last} ${suffix}`, type };
 };
 
 const generateApproxRecruitRanks = (stars: number, position: string): { nationalRank: number; positionalRank: number } => {
@@ -1296,7 +1306,9 @@ export const createRecruit = (): Recruit => {
 	    const interestRange = starBands[stars].interest;
 	    const baseInterest = randomBetween(interestRange[0], interestRange[1]);
 		    const hometownState = playerPart.homeState || pickRandom(US_STATES);
-		    const hometownCity = pickRandom(HOMETOWN_CITY_POOL);
+            const hometownStateCode = normalizeStateCode(hometownState);
+            const anchor = pickHometownAnchor(hometownStateCode, `${playerPart.id}:${hometownStateCode}`) || null;
+		    const hometownCity = anchor?.city || pickRandom(HOMETOWN_CITY_POOL);
 		    const highSchool = buildHighSchoolName(hometownCity);
 		    const { nationalRank, positionalRank } = generateApproxRecruitRanks(stars, playerPart.position);
 	
@@ -1435,6 +1447,8 @@ export const createRecruit = (): Recruit => {
 	        archetype,
 	        hometownCity,
 	        hometownState,
+            hometownLat: anchor?.lat,
+            hometownLon: anchor?.lon,
 	        highSchoolName: highSchool.name,
 	        highSchoolType: highSchool.type,
 	        region,
@@ -2860,6 +2874,23 @@ export const runInitialRecruitingOffers = (teams: Team[], recruits: Recruit[]): 
     const modifiableRecruits: Recruit[] = JSON.parse(JSON.stringify(recruits));
     const sortedRecruits = [...modifiableRecruits].sort((a, b) => (b.overall * 0.7 + b.potential * 0.3) - (a.overall * 0.7 + a.potential * 0.3));
     const recruitsById = new Map(modifiableRecruits.map(r => [r.id, r]));
+    const teamsByName = new Map(teams.map(t => [t.name, t]));
+
+    const recordCpuOffer = (recruit: Recruit, teamName: string, week: number) => {
+        if (!recruit.cpuOffers) recruit.cpuOffers = [];
+        if (recruit.cpuOffers.includes(teamName)) return;
+        recruit.cpuOffers.push(teamName);
+        if (!recruit.teamMomentum) recruit.teamMomentum = {};
+        recruit.teamMomentum[teamName] = clamp((recruit.teamMomentum[teamName] ?? 0) + 6, -20, 20);
+        const t = teamsByName.get(teamName);
+        if (!recruit.offerHistory) recruit.offerHistory = [];
+        recruit.offerHistory.push({
+            teamName,
+            week,
+            pitchType: t ? pickOfferPitchTypeForTeam(recruit, t) : 'Standard',
+            source: 'CPU',
+        });
+    };
 
     const pickWeightedTeamNames = (pool: Team[], count: number, exclude: Set<string>): string[] => {
         const picked: string[] = [];
@@ -2915,15 +2946,16 @@ export const runInitialRecruitingOffers = (teams: Team[], recruits: Recruit[]): 
             if (missing <= 0) return;
 
             const toAdd = pickWeightedTeamNames(topTierTeams, missing, existing);
-            recruitToUpdate.cpuOffers.push(...toAdd);
+            toAdd.forEach(name => recordCpuOffer(recruitToUpdate, name, 0));
         });
     };
 
     teams.forEach(team => {
         if (team.isUserTeam) return;
-        const availableScholarships = 15 - team.roster.filter(p => p.year !== 'Sr').length;
+        const returning = team.roster.filter(p => p.year !== 'Sr').length;
+        const availableScholarships = Math.max(0, 13 - returning);
         if (availableScholarships <= 0) return;
-        const offersToMake = Math.ceil(availableScholarships * (1 + (team.prestige / 200)));
+        const offersToMake = Math.ceil(availableScholarships * (0.9 + (team.prestige / 400)));
         let offersMade = 0;
         
         let targetPool: Recruit[];
@@ -2941,7 +2973,7 @@ export const runInitialRecruitingOffers = (teams: Team[], recruits: Recruit[]): 
                 const rankInPool = shuffledTargets.findIndex(r => r.id === recruit.id);
                 const offerChance = 1.0 - (rankInPool / (shuffledTargets.length * 1.5));
                 if (Math.random() < offerChance) {
-                    recruitToUpdate.cpuOffers.push(team.name);
+                    recordCpuOffer(recruitToUpdate, team.name, 0);
                     offersMade++;
                 }
             }
@@ -3068,7 +3100,11 @@ const setLastName = (fullName: string, newLast: string): string => {
     return parts.join(' ');
 };
 
-export const generateRecruitRelationships = (recruits: Recruit[]): Recruit[] => {
+export const generateRecruitRelationships = (
+    recruits: Recruit[],
+    teams: Team[] = [],
+    options?: { forceRosterSiblingSeeds?: boolean; rosterSiblingTargetOverride?: number }
+): Recruit[] => {
     const updated = recruits.map(r => ({
         ...r,
         relationships: r.relationships || [],
@@ -3084,7 +3120,7 @@ export const generateRecruitRelationships = (recruits: Recruit[]): Recruit[] => 
         return pool[Math.floor(Math.random() * pool.length)]!;
     };
 
-    const twinPairsTarget = clamp(Math.round(updated.length * 0.02), 3, 8); // ~6-7 per 350
+    const twinPairsTarget = clamp(Math.round(updated.length * 0.02), 0, 8); // ~6-7 per 350
     let createdTwinPairs = 0;
     while (createdTwinPairs < twinPairsTarget) {
         const a =
@@ -3152,7 +3188,7 @@ export const generateRecruitRelationships = (recruits: Recruit[]): Recruit[] => 
     }
 
     // Cousins: light touch, mostly higher-tier.
-    const cousinLinksTarget = clamp(Math.round(updated.length * 0.012), 2, 6);
+    const cousinLinksTarget = clamp(Math.round(updated.length * 0.012), 0, 6);
     let createdCousinLinks = 0;
     while (createdCousinLinks < cousinLinksTarget) {
         const a = pickEligible(r => r.stars >= 4) || null;
@@ -3189,43 +3225,59 @@ export const generateRecruitRelationships = (recruits: Recruit[]): Recruit[] => 
         createdCousinLinks++;
     }
 
-    // Siblings: similar to cousins, more likely package deal.
-    const siblingLinksTarget = clamp(Math.round(updated.length * 0.01), 2, 6);
-    let createdSiblingLinks = 0;
-    while (createdSiblingLinks < siblingLinksTarget) {
-        const a = pickEligible(r => r.stars >= 3) || null;
-        if (!a) break;
-        used.add(a.id);
-        const b = pickEligible(r => r.id !== a.id && (r.region === a.region || Math.random() < 0.5)) || null;
-        if (!b) break;
-        used.add(b.id);
+    // Roster siblings: only show "Sibling" if the recruit matches someone on a current college roster.
+    // This avoids the immersion-breaking effect of many same-class "siblings" who are also top prospects.
+    const rosterSiblingTarget = clamp(options?.rosterSiblingTargetOverride ?? Math.round(updated.length * 0.01), 0, 10);
+    if (teams.length && rosterSiblingTarget > 0) {
+        const rosterCandidates: { teamName: string; playerId: string; playerName: string; lastName: string; stateCode: string }[] = [];
+        teams.forEach(t => {
+            (t.roster || []).forEach(p => {
+                const playerStateCode = normalizeStateCode((p as any).homeState || t.state || '');
+                if (!playerStateCode) return;
+                const isSeed = options?.forceRosterSiblingSeeds
+                    ? true
+                    : (stableHash32(`${t.name}:${p.id}:${p.name}:sibSeed`) % 1000) < 3; // ~0.3% of roster players
+                if (!isSeed) return;
+                rosterCandidates.push({
+                    teamName: t.name,
+                    playerId: p.id,
+                    playerName: p.name,
+                    lastName: lastNameOf(p.name),
+                    stateCode: playerStateCode,
+                });
+            });
+        });
 
-        const sharedLast = lastNameOf(a.name);
-        b.name = setLastName(b.name, sharedLast);
-        const familyId = `fam-${sharedLast}-${a.id}`;
-
-        const packageDeal = Math.random() < 0.6 ? 'Package deal' : undefined;
-        const linkA: RelationshipLink = {
-            type: 'Sibling',
-            personId: b.id,
-            displayName: b.name,
-            sportLevel: 'HS',
-            notes: packageDeal,
-        };
-        const linkB: RelationshipLink = {
-            type: 'Sibling',
-            personId: a.id,
-            displayName: a.name,
-            sportLevel: 'HS',
-            notes: packageDeal,
-        };
-
-        a.relationships = [...(a.relationships || []), linkA];
-        b.relationships = [...(b.relationships || []), linkB];
-        a.familyLastNameGroupId = familyId;
-        b.familyLastNameGroupId = familyId;
-
-        createdSiblingLinks++;
+        const usedRosterPlayers = new Set<string>();
+        let created = 0;
+        const shuffled = [...updated].sort((a, b) => stableHash32(`${a.id}:sibOrder`) - stableHash32(`${b.id}:sibOrder`));
+        for (const r of shuffled) {
+            if (created >= rosterSiblingTarget) break;
+            if ((r.relationships || []).some(l => l.type === 'Sibling' && l.sportLevel === 'College')) continue;
+            const recruitStateCode = normalizeStateCode(r.homeState || r.hometownState || r.state || '');
+            if (!recruitStateCode) continue;
+            const recruitLast = lastNameOf(r.name);
+            const matches = rosterCandidates.filter(c =>
+                !usedRosterPlayers.has(c.playerId) &&
+                c.stateCode === recruitStateCode &&
+                c.lastName === recruitLast
+            );
+            if (!matches.length) continue;
+            const picked = matches[stableHash32(`${r.id}:${recruitLast}:${recruitStateCode}:sibPick`) % matches.length]!;
+            usedRosterPlayers.add(picked.playerId);
+            r.relationships = [
+                ...(r.relationships || []),
+                {
+                    type: 'Sibling',
+                    personId: picked.playerId,
+                    displayName: picked.playerName,
+                    sportLevel: 'College',
+                    teamName: picked.teamName,
+                    notes: 'On current roster',
+                } satisfies RelationshipLink,
+            ];
+            created++;
+        }
     }
 
     // Re-map back to array order (objects are mutated in place above).
@@ -3390,6 +3442,7 @@ export const initializeGameWorld = (userTeamName: string) => {
 	        name,
 	        conference,
 	        state: SCHOOL_STATES[name] || 'Unknown',
+            location: SCHOOL_LOCATIONS[name],
         prestige,
         recruitingPrestige: prestige,
         roster: assignDefaultMinutes(autoSetStarters(roster)),
@@ -3570,10 +3623,9 @@ export const initializeGameWorld = (userTeamName: string) => {
       }
   });
 	  let recruits: Recruit[] = Array.from({ length: 350 }, createRecruit);
-	  recruits = generateRecruitRelationships(recruits);
+	  recruits = generateRecruitRelationships(recruits, allTeams);
 	  recruits = recomputeRecruitBoardRanks(recruits);
-	  recruits = runInitialRecruitingOffers(allTeams, recruits);
-	  recruits = applyPackageDealOfferMirroring(recruits, allTeams, userTeamName, 1);
+	  // Recruiting offers are generated over time (daily), not pre-seeded at world init.
   const { sponsors: finalSponsors, updatedTeams } = recalculateSponsorLandscape(allTeams, initialSponsors, null);
   allTeams = updatedTeams;
 
@@ -3595,6 +3647,7 @@ export const initializeGameWorld = (userTeamName: string) => {
       eventQueue,
       seasonYear,
       seasonAnchors,
+      recruitingCadence: 'daily',
       scheduledGamesById: generatedSchedule.scheduledGamesById,
       teamSchedulesById: generatedSchedule.teamSchedulesById,
       scheduledEventIdsByDate: generatedSchedule.scheduledEventIdsByDate,
@@ -4628,25 +4681,6 @@ const stableFloatBetween = (key: string, min: number, max: number): number => {
     return min + (max - min) * u;
 };
 
-const REGION_BY_STATE: Record<string, 'Northeast' | 'Midwest' | 'South' | 'West'> = (() => {
-    const northeast = new Set(['CT', 'ME', 'MA', 'NH', 'RI', 'VT', 'NJ', 'NY', 'PA']);
-    const midwest = new Set(['IL', 'IN', 'MI', 'OH', 'WI', 'IA', 'KS', 'MN', 'MO', 'NE', 'ND', 'SD']);
-    const south = new Set(['DE', 'FL', 'GA', 'MD', 'NC', 'SC', 'VA', 'DC', 'WV', 'AL', 'KY', 'MS', 'TN', 'AR', 'LA', 'OK', 'TX']);
-    const west = new Set(['AZ', 'CO', 'ID', 'MT', 'NV', 'NM', 'UT', 'WY', 'AK', 'CA', 'HI', 'OR', 'WA']);
-    const map: Record<string, 'Northeast' | 'Midwest' | 'South' | 'West'> = {};
-    northeast.forEach(s => (map[s] = 'Northeast'));
-    midwest.forEach(s => (map[s] = 'Midwest'));
-    south.forEach(s => (map[s] = 'South'));
-    west.forEach(s => (map[s] = 'West'));
-    return map;
-})();
-
-const getRegionForState = (state: string | undefined | null): string | undefined => {
-    if (!state) return undefined;
-    const code = state.toUpperCase();
-    return REGION_BY_STATE[code] || undefined;
-};
-
 const STATE_CODE_BY_NAME: Record<string, string> = {
     ALABAMA: 'AL',
     ALASKA: 'AK',
@@ -4657,6 +4691,9 @@ const STATE_CODE_BY_NAME: Record<string, string> = {
     CONNECTICUT: 'CT',
     DELAWARE: 'DE',
     'DISTRICT OF COLUMBIA': 'DC',
+    'WASHINGTON D.C.': 'DC',
+    'WASHINGTON DC': 'DC',
+    'D.C.': 'DC',
     FLORIDA: 'FL',
     GEORGIA: 'GA',
     HAWAII: 'HI',
@@ -4703,8 +4740,31 @@ const STATE_CODE_BY_NAME: Record<string, string> = {
 
 const normalizeStateCode = (value: string): string => {
     const t = (value || '').trim().toUpperCase();
+    const paren = t.match(/\(([A-Z]{2})\)/)?.[1];
+    if (paren) return paren;
+    const tail = t.match(/\b([A-Z]{2})\b$/)?.[1];
+    if (tail && STATE_CAPITAL_COORDS[tail]) return tail;
     if (t.length === 2) return t;
     return STATE_CODE_BY_NAME[t] || t;
+};
+
+const REGION_BY_STATE: Record<string, 'Northeast' | 'Midwest' | 'South' | 'West'> = (() => {
+    const northeast = new Set(['CT', 'ME', 'MA', 'NH', 'RI', 'VT', 'NJ', 'NY', 'PA']);
+    const midwest = new Set(['IL', 'IN', 'MI', 'OH', 'WI', 'IA', 'KS', 'MN', 'MO', 'NE', 'ND', 'SD']);
+    const south = new Set(['DE', 'FL', 'GA', 'MD', 'NC', 'SC', 'VA', 'DC', 'WV', 'AL', 'KY', 'MS', 'TN', 'AR', 'LA', 'OK', 'TX']);
+    const west = new Set(['AZ', 'CO', 'ID', 'MT', 'NV', 'NM', 'UT', 'WY', 'AK', 'CA', 'HI', 'OR', 'WA']);
+    const map: Record<string, 'Northeast' | 'Midwest' | 'South' | 'West'> = {};
+    northeast.forEach(s => (map[s] = 'Northeast'));
+    midwest.forEach(s => (map[s] = 'Midwest'));
+    south.forEach(s => (map[s] = 'South'));
+    west.forEach(s => (map[s] = 'West'));
+    return map;
+})();
+
+const getRegionForState = (state: string | undefined | null): string | undefined => {
+    if (!state) return undefined;
+    const code = normalizeStateCode(state);
+    return REGION_BY_STATE[code] || undefined;
 };
 
 const STATE_CAPITAL_COORDS: Record<string, { lat: number; lon: number }> = {
@@ -4775,19 +4835,107 @@ const haversineMiles = (a: { lat: number; lon: number }, b: { lat: number; lon: 
     return R * c;
 };
 
+const roadMultiplierFromCrowMiles = (crowMiles: number, sameState: boolean): number => {
+    const d = Math.max(0, crowMiles);
+    if (sameState) {
+        // Short, local trips can be disproportionately "road-y" (indirect routes), but should not balloon.
+        // Approaches ~1.10 for longer in-state drives; closer to ~1.20 for very short distances.
+        return 1.10 + 0.10 * Math.exp(-d / 140);
+    }
+    // Longer out-of-state trips tend to be under-estimated by straight-line distance; add a bit more lift.
+    // Approaches ~1.22 for cross-country; ~1.15 for nearby border states.
+    return 1.14 + 0.08 * (1 - Math.exp(-d / 900));
+};
+
+const STATE_PSEUDO_HOME_RADIUS_MILES: Record<string, number> = {
+    // A light heuristic so in-state distances don't routinely exceed real-world bounds.
+    // (Used only when we don't have actual recruit coordinates.)
+    AK: 420,
+    CA: 260,
+    TX: 280,
+    MT: 220,
+    NM: 200,
+    NV: 200,
+    AZ: 190,
+    CO: 190,
+    OR: 170,
+    WA: 170,
+    ID: 170,
+    WY: 170,
+    UT: 170,
+    FL: 170,
+    GA: 150,
+    AL: 130,
+    LA: 150,
+    MS: 140,
+    TN: 150,
+    NC: 160,
+    SC: 140,
+    VA: 150,
+    WV: 140,
+    KY: 150,
+    PA: 150,
+    NY: 160,
+    MI: 160,
+    MN: 160,
+    WI: 150,
+    IL: 150,
+    IN: 140,
+    OH: 150,
+    IA: 140,
+    MO: 150,
+    OK: 160,
+    AR: 150,
+    KS: 160,
+    NE: 160,
+    SD: 170,
+    ND: 170,
+    ME: 150,
+    VT: 90,
+    NH: 90,
+    MA: 90,
+    RI: 60,
+    CT: 70,
+    NJ: 80,
+    DE: 70,
+    MD: 80,
+    DC: 10,
+    HI: 60,
+};
+
+const pickPseudoHomeCoordsForState = (stateCode: string, seedKey: string): { lat: number; lon: number } | null => {
+    const base = STATE_CAPITAL_COORDS[stateCode];
+    if (!base) return null;
+
+    const maxRadiusMiles = STATE_PSEUDO_HOME_RADIUS_MILES[stateCode] ?? 155;
+    const theta = stableFloatBetween(`${seedKey}:theta`, 0, Math.PI * 2);
+    const r = Math.sqrt(stableFloatBetween(`${seedKey}:r`, 0, 1)) * maxRadiusMiles;
+
+    const milesPerDegreeLat = 69;
+    const latRad = (base.lat * Math.PI) / 180;
+    const milesPerDegreeLon = milesPerDegreeLat * Math.max(0.2, Math.cos(latRad));
+
+    const dLat = (r * Math.cos(theta)) / milesPerDegreeLat;
+    const dLon = (r * Math.sin(theta)) / milesPerDegreeLon;
+    return { lat: base.lat + dLat, lon: base.lon + dLon };
+};
+
 const estimateDistanceMiles = (fromState: string, toState: string, seedKey: string): number => {
     const a = normalizeStateCode(fromState);
     const b = normalizeStateCode(toState);
     if (a === b) {
-        // In-state travel: still non-zero, but avoid obviously inflated values for small states.
-        return stableIntBetween(`${seedKey}:same`, 18, 420);
+        // In-state travel: still non-zero, but keep within plausible bounds by state size.
+        const radius = STATE_PSEUDO_HOME_RADIUS_MILES[a] ?? 155;
+        const approxMax = clamp(Math.round(radius * 2.1), 60, 750);
+        return stableIntBetween(`${seedKey}:same`, 18, approxMax);
     }
 
     const ca = STATE_CAPITAL_COORDS[a];
     const cb = STATE_CAPITAL_COORDS[b];
     if (ca && cb) {
-        // Approximate "as the crow flies" between state capitals, with small deterministic jitter.
-        const base = haversineMiles(ca, cb);
+        // Approximate road distance by inflating "as the crow flies" between state capitals.
+        const crow = haversineMiles(ca, cb);
+        const base = crow * roadMultiplierFromCrowMiles(crow, false);
         const jitter = stableIntBetween(`${seedKey}:jit`, -25, 25);
         return clamp(Math.round(base + jitter), 30, 3200);
     }
@@ -4809,6 +4957,36 @@ const estimateDistanceMiles = (fromState: string, toState: string, seedKey: stri
     return stableIntBetween(`${seedKey}:far`, 900, 2200);
 };
 
+const inferNearestStateCodeFromCoords = (coords: { lat: number; lon: number }): string | null => {
+    let bestCode: string | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    Object.entries(STATE_CAPITAL_COORDS).forEach(([code, capital]) => {
+        const d = haversineMiles(coords, capital);
+        if (d < bestDist) {
+            bestDist = d;
+            bestCode = code;
+        }
+    });
+    return bestCode;
+};
+
+const resolveTeamStateCode = (team: Team): string | null => {
+    const direct = normalizeStateCode(team.state || '');
+    if (STATE_CAPITAL_COORDS[direct]) return direct;
+
+    const mapped = normalizeStateCode(SCHOOL_STATES[team.name] || '');
+    if (STATE_CAPITAL_COORDS[mapped]) return mapped;
+
+    const parsed = normalizeStateCode(team.name || '');
+    if (STATE_CAPITAL_COORDS[parsed]) return parsed;
+
+    if (team.location) {
+        return inferNearestStateCodeFromCoords(team.location);
+    }
+
+    return null;
+};
+
 export const getRecruitRegionForState = (state: string | undefined | null): string | undefined => getRegionForState(state);
 
 const getRecruitOriginStateCode = (recruit: Recruit): string => {
@@ -4816,7 +4994,36 @@ const getRecruitOriginStateCode = (recruit: Recruit): string => {
 };
 
 export const estimateRecruitDistanceMilesToTeam = (recruit: Recruit, team: Team): number => {
-    return estimateDistanceMiles(getRecruitOriginStateCode(recruit), team.state, `${recruit.id}:${team.name}`);
+    const originState = getRecruitOriginStateCode(recruit);
+    const teamState = resolveTeamStateCode(team);
+    const isSameState = !!teamState && originState === teamState;
+
+    // If we have precise team location, use it for better accuracy.
+    // When we don't have recruit coordinates, generate a stable "pseudo home" coordinate per recruit+state
+    // so in-state distances are consistent across different schools.
+    if (team.location) {
+        const recruitCoords =
+            (Number.isFinite(recruit.hometownLat) && Number.isFinite(recruit.hometownLon)
+                ? { lat: recruit.hometownLat as number, lon: recruit.hometownLon as number }
+                : null) ||
+            pickPseudoHomeCoordsForState(originState, `${recruit.id}:${originState}`) ||
+            STATE_CAPITAL_COORDS[originState] ||
+            null;
+
+        if (recruitCoords) {
+            const crow = haversineMiles(recruitCoords, team.location);
+            const base = crow * roadMultiplierFromCrowMiles(crow, isSameState);
+            const jitter = stableIntBetween(`${recruit.id}:${team.name}:jit`, -12, 12);
+            const min = isSameState ? 8 : 30;
+            return clamp(Math.round(base + jitter), min, 3200);
+        }
+    }
+
+    if (teamState) {
+        return estimateDistanceMiles(originState, teamState, `${recruit.id}:${team.name}`);
+    }
+
+    return estimateDistanceMiles(originState, team.state, `${recruit.id}:${team.name}`);
 };
 
 const getPlayerHomeStateCode = (player: Player): string => {
@@ -4882,13 +5089,17 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	    const proximityWeight = clamp(motivations.proximity / 100, 0, 1);
 	    const developmentWeight = clamp(motivations.development / 100, 0, 1);
 
-	    const recruitRegion = recruit.region || getRegionForState(recruit.homeState) || getRegionForState(recruit.hometownState);
-	    const teamRegion = getRegionForState(team.state);
-	    const estDistanceMiles = estimateDistanceMiles(getRecruitOriginStateCode(recruit), team.state, `${recruit.id}:${team.name}`);
+	    const recruitState = recruit.homeState || recruit.hometownState || recruit.state || '';
+	    const teamStateCode = resolveTeamStateCode(team) || normalizeStateCode(team.state || '');
+	    const isHomeState = !!recruitState && !!teamStateCode && normalizeStateCode(recruitState) === teamStateCode;
+	    const recruitRegion = recruit.region || getRegionForState(recruitState);
+	    const teamRegion = getRegionForState(teamStateCode);
+	    const estDistanceMiles = estimateRecruitDistanceMilesToTeam(recruit, team);
 	    const proximityScore = clamp(100 - Math.round(estDistanceMiles / 25), 0, 100); // ~0 at 2500mi, ~100 at 0
         const strictness = clamp((recruit.fitStrictness ?? 50) / 100, 0, 1);
         const preferenceMultiplier = 0.9 + strictness * 0.35;
-	    const proximityFactor = (proximityScore - 50) * (0.15 + proximityWeight * 0.45) * preferenceMultiplier;
+	    // Proximity needs to materially matter when recruits say it matters.
+	    const proximityFactor = (proximityScore - 50) * (0.10 + proximityWeight * 0.85) * preferenceMultiplier;
         const personalityProximityBonus = (() => {
             if (recruit.personalityTrait === 'Homebody') {
                 return (proximityScore - 50) * 0.25;
@@ -4907,7 +5118,7 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	        : 0;
 	    const coachStyleAwareness = coachStyleMatch ? (4 + motivations.relationship * 0.04) : 0;
 	    const regionAwareness = recruitRegion && teamRegion && recruitRegion === teamRegion ? 4 : 0;
-	    const homeStateAwareness = recruit.homeState === team.state ? 6 : 0;
+	    const homeStateAwareness = isHomeState ? 10 : 0;
 	    const awarenessScore = clamp(
 	        0.65 * brand +
 	        0.15 * hype +
@@ -4989,7 +5200,6 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 
     // New Recruiting Logic (Archetypes & Dealbreakers)
     let archetypeBonus = 0;
-	    const isHomeState = recruit.homeState === team.state;
     
     if (team.pipelines) {
         const pipeline = team.pipelines.find(p => p.state === recruit.homeState);
@@ -5008,7 +5218,20 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
              archetypeBonus += prestigeFactor * 1.2;
             break;
         case 'HometownHero':
-            archetypeBonus += isHomeState ? (15 + proximityWeight * 15) : (-5 - proximityWeight * 5);
+            // Hometown heroes strongly prefer staying in-state and are still biased toward nearby schools.
+            // This should be strong enough to put home-state flagships on their shortlist.
+            if (isHomeState) {
+                archetypeBonus += (38 + proximityWeight * 42) * preferenceMultiplier;
+            } else {
+                const regionMatch = recruitRegion && teamRegion && recruitRegion === teamRegion;
+                const distanceMultiplier =
+                    estDistanceMiles <= 250 ? 0.25 :
+                    estDistanceMiles <= 500 ? 0.6 :
+                    estDistanceMiles <= 900 ? 1.0 :
+                    1.35;
+                const basePenalty = (12 + proximityWeight * 22) * preferenceMultiplier * distanceMultiplier;
+                archetypeBonus -= regionMatch ? basePenalty * 0.7 : basePenalty;
+            }
             break;
         case 'ProcessTrustor':
             archetypeBonus += (academicScore - 50) * (0.15 + academicsWeight * 0.35) + (developmentWeight * 4);
@@ -5135,7 +5358,7 @@ export const getRecruitWhyBadges = (
 
     const candidates: { label: string; score: number }[] = [
         { label: 'Exposure ++', score: exposureWeight * (0.55 * (prestige / 100) + 0.45 * (marketScore / 100)) },
-        { label: 'NIL +', score: nilWeight * clamp((wealth + 10) / 25, 0, 1) },
+        { label: 'NIL $ +', score: nilWeight * clamp((wealth + 10) / 25, 0, 1) },
         { label: 'Proximity ++', score: proximityWeight * (estDistanceMiles <= 500 ? 1 : estDistanceMiles <= 900 ? 0.6 : 0.2) },
         { label: 'Playing Time +', score: playingTimeWeight * (positionNeedFactor ? 1 : 0.35) },
         { label: 'Academics ++', score: academicsWeight * clamp((academicScore - 55) / 25, 0, 1) },
@@ -5406,13 +5629,31 @@ const getPackageIndependencePenalty = (recruit: Recruit): number => {
 };
 
 
-export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTeamName: string, week: number, schedule: GameResult[][], isSigningPeriod: boolean = false, contactsMadeThisWeek: number = 0, contactPoints?: number, userCoachSkills?: string[]): { updatedRecruits: Recruit[], updatedContactsMadeThisWeek: number } => {
+export const processRecruitingWeek = (
+    teams: Team[],
+    recruits: Recruit[],
+    userTeamName: string,
+    week: number,
+    schedule: GameResult[][],
+    isSigningPeriod: boolean = false,
+    contactsMadeThisWeek: number = 0,
+    contactPoints?: number,
+    userCoachSkills?: string[],
+    options?: { skipCpuActions?: boolean; startDate?: string; useDailyCommitments?: boolean }
+): { updatedRecruits: Recruit[], updatedContactsMadeThisWeek: number } => {
     let currentContactsMade = contactsMadeThisWeek;
     let updatedRecruits = JSON.parse(JSON.stringify(recruits));
     const teamsByName = new Map(teams.map(t => [t.name, t]));
     const userTeam = teams.find(t => t.isUserTeam);
     const recruitsByIdIndex = new Map(updatedRecruits.map((r: Recruit) => [r.id, r]));
     const decisionPressure = getDecisionPressure(week, isSigningPeriod);
+
+    const teamCommitCounts = new Map<string, number>();
+    updatedRecruits.forEach((r: Recruit) => {
+        if (r.verbalCommitment) {
+            teamCommitCounts.set(r.verbalCommitment, (teamCommitCounts.get(r.verbalCommitment) || 0) + 1);
+        }
+    });
 
 	    // Apply Weekly Interest Volatility
 	    updatedRecruits.forEach((r: Recruit) => {
@@ -5430,7 +5671,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 	            const volatilityChance = 0.5 - (resilience / 200); 
             if (Math.random() < volatilityChance) {
                 const swing = Math.floor(Math.random() * 7) - 3; // -3 to +3
-                r.interest = Math.min(100, Math.max(0, r.interest + swing));
+                r.interest = normalizeInterest(r.interest + swing);
             }
         }
     });
@@ -5451,7 +5692,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
                             won, 
                             isRivalry: rivalry || false 
 	                        });
-	                        r.interest = Math.min(100, Math.max(0, r.interest + boost));
+	                        r.interest = normalizeInterest(r.interest + boost);
 	                        r.teamMomentum![userTeam.name] = clamp((r.teamMomentum?.[userTeam.name] ?? 0) + 4, -20, 20);
 	                        if (!r.visitHistory) r.visitHistory = [];
 	                        const outcome = boost >= 10 ? 'Positive' : boost <= 0 ? 'Negative' : 'Neutral';
@@ -5471,10 +5712,11 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
     const sortedRecruits = [...updatedRecruits].sort((a, b) => (b.overall + b.potential) - (a.overall + a.potential));
 
 	    // CPU recruiting AI: board + waves + resource limits + drop longshots
-	    teams.forEach(team => {
+        if (!options?.skipCpuActions) teams.forEach(team => {
 	        if (team.isUserTeam) return;
 
-	        const availableScholarships = 15 - team.roster.filter(p => p.year !== 'Sr').length;
+            const commits = teamCommitCounts.get(team.name) || 0;
+	        const availableScholarships = Math.max(0, 13 - team.roster.filter(p => p.year !== 'Sr').length - commits);
 	        if (availableScholarships <= 0) return;
 
 	        const prestige = team.prestige ?? 50;
@@ -5645,7 +5887,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 	            if (!lastOffer) return;
 	            const weeksSinceOffer = week - lastOffer.week;
 	            if (weeksSinceOffer >= 2 && m <= 0) {
-	                r.interest = clamp(r.interest - stableIntBetween(`${r.id}:${userTeam.name}:${week}:cool`, 1, 3), 0, 100);
+	                r.interest = normalizeInterest(r.interest - stableIntBetween(`${r.id}:${userTeam.name}:${week}:cool`, 1, 3));
 	            }
 	        });
 	    }
@@ -5675,7 +5917,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
                     const aboveBaseline = Math.abs(difference);
                     boost = Math.max(1, 3 - aboveBaseline / 18);
 	                }
-	                r.interest = Math.min(100, Math.round(r.interest + boost));
+	                r.interest = normalizeInterest(r.interest + boost);
 	                if (!r.teamMomentum) r.teamMomentum = {};
 	                r.teamMomentum[userTeamName] = clamp((r.teamMomentum[userTeamName] ?? 0) + 1, -20, 20);
 	            }
@@ -5696,7 +5938,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
                 if (currentContactsMade + offerCost <= actualContactPoints) {
 	                    currentContactsMade += offerCost;
 	                    r.userHasOffered = true;
-	                    r.interest = Math.min(100, r.interest + randomBetween(15, 25));
+	                    r.interest = normalizeInterest(r.interest + randomBetween(15, 25));
 	                    if (!r.teamMomentum) r.teamMomentum = {};
 	                    r.teamMomentum[userTeamName] = clamp((r.teamMomentum[userTeamName] ?? 0) + 4, -20, 20);
 	                }
@@ -5841,6 +6083,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
             ) {
                 r.verbalCommitment = bestJointSchool.name;
                 other.verbalCommitment = bestJointSchool.name;
+                teamCommitCounts.set(bestJointSchool.name, (teamCommitCounts.get(bestJointSchool.name) || 0) + 2);
                 r.isTargeted = false;
                 other.isTargeted = false;
                 r.commitWeek = r.commitWeek ?? week;
@@ -5992,9 +6235,20 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
             const offerCount = offerDetails.length;
             const packageCommitAdj = hasPackageDeal && hasMutualPackageOffer ? 1 : 0;
             const pressureAdjustment = Math.round(decisionPressure * 8);
-            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0) - pressureAdjustment, 62, 92);
-            const shareGate = clamp(78 - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0) - Math.round(decisionPressure * 10), 15, 78);
-            const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - (packageCommitAdj ? 2 : 0) - Math.round(decisionPressure * 2), 1, 14);
+
+            const leaderTeam = teamsByName.get(topOffer.name);
+            let scarcityMod = 0;
+            if (leaderTeam) {
+                 const returning = leaderTeam.roster.filter(p => p.year !== 'Sr').length;
+                 const commits = teamCommitCounts.get(topOffer.name) || 0;
+                 const slots = 13 - returning - commits;
+                 if (slots <= 1) scarcityMod = 8;
+                 else if (slots <= 2) scarcityMod = 4;
+            }
+
+            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0) - pressureAdjustment - scarcityMod, 62, 92);
+            const shareGate = clamp(78 - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0) - Math.round(decisionPressure * 10) - scarcityMod * 2, 15, 78);
+            const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - (packageCommitAdj ? 2 : 0) - Math.round(decisionPressure * 2) - Math.ceil(scarcityMod / 2), 1, 14);
 
             const canCommitThisWeek = week >= Math.max(1, minCommitWeek - (packageCommitAdj ? 1 : 0));
             const hasClearLead = offerDetails.length === 1 || interestDifference >= leadGate;
@@ -6008,6 +6262,7 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
 
 	            if ((canCommitThisWeek && commitByShare) || Math.random() < softCommitChance) {
 	                r.verbalCommitment = topOffer.name;
+                    teamCommitCounts.set(topOffer.name, (teamCommitCounts.get(topOffer.name) || 0) + 1);
 	                r.softCommitment = week <= 8;
 	                r.isTargeted = false;
 	                r.commitWeek = r.commitWeek ?? week;
@@ -6023,15 +6278,30 @@ export const processRecruitingWeek = (teams: Team[], recruits: Recruit[], userTe
                 const desperationCommitThreshold = 30 + (week - 8); // Starts at 30 and increases
                 const adjustedDesperationThreshold = Math.max(20, desperationCommitThreshold - Math.round(decisionPressure * 6));
 	                if (topOffer.score > adjustedDesperationThreshold) {
-	                    r.verbalCommitment = topOffer.name;
-	                    r.softCommitment = false;
-	                    r.isTargeted = false;
-	                    r.commitWeek = r.commitWeek ?? week;
-	                    r.recruitmentStage = 'HardCommit';
-	                    r.lastRecruitingNews = `${r.name} committed to ${topOffer.name} late in the cycle.`;
-	                    if (r.userHasOffered) {
-	                        r.userHasOffered = false;
-	                    }
+                        const targetSchoolName = topOffer.name;
+                        // Delayed commitment logic
+                        if (options?.useDailyCommitments && options.startDate && !r.verbalCommitment) {
+                             const daysDelay = Math.floor(Math.random() * 6); // 0 to 5 days
+                             const commitDate = addDaysISO(options.startDate, daysDelay);
+                             r.pendingCommitment = {
+                                 school: targetSchoolName,
+                                 date: commitDate,
+                                 isHard: true,
+                                 news: `${r.name} committed to ${targetSchoolName} late in the cycle.`
+                             };
+                             // Don't set verbalCommitment yet
+                        } else {
+    	                    r.verbalCommitment = targetSchoolName;
+                            teamCommitCounts.set(targetSchoolName, (teamCommitCounts.get(targetSchoolName) || 0) + 1);
+    	                    r.softCommitment = false;
+    	                    r.isTargeted = false;
+    	                    r.commitWeek = r.commitWeek ?? week;
+    	                    r.recruitmentStage = 'HardCommit';
+    	                    r.lastRecruitingNews = `${r.name} committed to ${targetSchoolName} late in the cycle.`;
+    	                    if (r.userHasOffered) {
+    	                        r.userHasOffered = false;
+    	                    }
+                         }
 	                }
 	            }
 	        }
@@ -8880,9 +9150,248 @@ export const runSimulationForWeek = (
     }
 
     const teamsWithDevelopment = processInSeasonDevelopment(teamsCopy, userCoachSkills);
-    const { updatedRecruits } = processRecruitingWeek(teamsWithDevelopment, recruits, state.userTeam!.name, week, state.schedule, false, state.contactsMadeThisWeek, getContactPoints(state.userTeam), userCoachSkills);
+    const { updatedRecruits } = processRecruitingWeek(
+        teamsWithDevelopment,
+        recruits,
+        state.userTeam!.name,
+        week,
+        state.schedule,
+        false,
+        state.contactsMadeThisWeek,
+        getContactPoints(state.userTeam),
+        userCoachSkills,
+        userCoachSkills,
+        { 
+            skipCpuActions: (state.recruitingCadence ?? 'weekly') === 'daily',
+            startDate: state.currentDate,
+            useDailyCommitments: (state.recruitingCadence ?? 'weekly') === 'daily'
+        }
+    );
 
     return { updatedAllTeams: teamsWithDevelopment, updatedSchedule, updatedRecruits, gameLogs, newUserTeamAttendance, updatedCoach, updatedNBATeams, updatedNBASchedule, updatedNBAFreeAgents, nbaTransactions, nbaDraftPickAssets: nbaDraftPickAssets ?? state.nbaDraftPickAssets };
+};
+
+// NOTE: Weekly simulation is legacy-only. The game now advances one day at a time and simulates
+// only the scheduled games that occur on `currentDate`. Do not reintroduce week-based sim UI.
+export const runSimulationForDate = (
+    state: GameState,
+    dateISO: string,
+    teams: Team[],
+    schedule: GameResult[][],
+    userCoachSkills?: string[],
+    playbook?: any
+): {
+    updatedAllTeams: Team[],
+    updatedSchedule: GameResult[][],
+    gameLogs: GameBoxScore[],
+    newUserTeamAttendance: GameAttendanceRecord[],
+    updatedCoach: Coach | null,
+    simulatedWeeks: number[],
+    processedEventIds: string[]
+} => {
+    const eventsToday = (state.eventQueue || []).filter(e => e.type === EventType.GAME && isSameISO(e.date, dateISO) && !e.processed);
+    const processedEventIds: string[] = [];
+    const simulatedWeeksSet = new Set<number>();
+
+    const gameLogs: GameBoxScore[] = [];
+    const newUserTeamAttendance: GameAttendanceRecord[] = [];
+    const teamsCopy: Team[] = JSON.parse(JSON.stringify(teams));
+    const teamsByName = new Map<string, Team>(teamsCopy.map((t: Team) => [t.name, t]));
+    const updatedSchedule: GameResult[][] = JSON.parse(JSON.stringify(schedule));
+    let updatedCoach = state.coach ? JSON.parse(JSON.stringify(state.coach)) as Coach : null;
+
+    const recordGameDay = (homeTeam: Team, awayTeam: Team, week: number, gameId: string) => {
+        const forecast = calculateAttendance(homeTeam, awayTeam, week, playbook || []);
+
+        const arena = ensureArenaFacility(homeTeam);
+        const attendanceEntry: GameAttendanceRecord = {
+            gameId,
+            opponent: awayTeam.name,
+            attendance: forecast.attendance,
+            capacity: forecast.capacity,
+            revenue: forecast.revenue,
+            week,
+            simulated: false,
+            segmentData: forecast.segments?.map(seg => ({
+                key: seg.key,
+                revenue: Math.round(seg.filled * seg.price),
+                attendance: seg.filled,
+                price: seg.price,
+            })),
+        };
+        arena.attendanceLog = [
+            ...(arena.attendanceLog || []).filter(entry => entry.gameId !== gameId),
+            attendanceEntry,
+        ];
+        homeTeam.facilities = { ...(homeTeam.facilities || {}), arena };
+
+        const prices = homeTeam.prices ?? DEFAULT_TEAM_PRICES;
+        const willingness = calculateFanWillingness(homeTeam);
+        const foodDemandFactor = priceDemandFactor(prices.concessionFoodPrice, willingness.concessionFood, 1.65, 1.5);
+        const drinkDemandFactor = priceDemandFactor(prices.concessionDrinkPrice, willingness.concessionDrink, 1.55, 1.5);
+        const concessionRevenue = Math.round(
+            forecast.attendance *
+            (prices.concessionFoodPrice * foodDemandFactor +
+                prices.concessionDrinkPrice * drinkDemandFactor)
+        );
+        const parkingRevenue = Math.round(calculateDetailedParkingRevenue(homeTeam, forecast.attendance));
+
+        recordFinancialTransaction(homeTeam, state.season, week, {
+            description: `Ticket Revenue vs ${awayTeam.name}`,
+            category: 'Game Day Revenue',
+            amount: Math.round(forecast.revenue),
+            revenueKey: 'gateRevenue',
+        });
+        if (concessionRevenue) {
+            recordFinancialTransaction(homeTeam, state.season, week, {
+                description: `Concessions vs ${awayTeam.name}`,
+                category: 'Game Day Revenue',
+                amount: concessionRevenue,
+                revenueKey: 'concessionsRevenue',
+            });
+        }
+        if (parkingRevenue) {
+            recordFinancialTransaction(homeTeam, state.season, week, {
+                description: `Parking vs ${awayTeam.name}`,
+                category: 'Game Day Revenue',
+                amount: parkingRevenue,
+                revenueKey: 'parkingRevenue',
+            });
+        }
+
+        const scheduledPromo = homeTeam.eventCalendar?.find(e => e.week === week && e.status === 'pending');
+        if (scheduledPromo) {
+            const promoEntry = (playbook || []).find((p: any) => p.id === scheduledPromo.playbookId);
+            if (promoEntry?.cost) {
+                recordFinancialTransaction(homeTeam, state.season, week, {
+                    description: `Promotion: ${promoEntry.label} vs ${awayTeam.name}`,
+                    category: 'Expense',
+                    amount: -Math.abs(promoEntry.cost),
+                    expenseKey: 'marketingExpenses',
+                });
+            }
+            homeTeam.eventCalendar = (homeTeam.eventCalendar || []).map(e =>
+                e.id === scheduledPromo.id ? { ...e, status: 'resolved' as const } : e
+            );
+        }
+
+        const projectedTravel = awayTeam.initialProjectedRevenue?.travelExpenses ?? calculateTeamRevenue(awayTeam, null).travelExpenses;
+        const awayGames = 16;
+        const travelCost = Math.round((projectedTravel || 0) / awayGames);
+        if (travelCost > 0) {
+            recordFinancialTransaction(awayTeam, state.season, week, {
+                description: `Travel & Logistics @ ${homeTeam.name}`,
+                category: 'Expense',
+                amount: -travelCost,
+                expenseKey: 'travelExpenses',
+            });
+        }
+
+        return forecast;
+    };
+
+    for (const event of eventsToday) {
+        const week = Number(event.payload?.week || state.gameInSeason || 1);
+        simulatedWeeksSet.add(week);
+        processedEventIds.push(event.id);
+
+        const homeTeam = teamsByName.get(event.payload?.homeTeam);
+        const awayTeam = teamsByName.get(event.payload?.awayTeam);
+        if (!homeTeam || !awayTeam) continue;
+
+        const gameId = event.payload?.gameId || `S${state.season}D-${dateISO}-${homeTeam.name}v${awayTeam.name}`;
+        const isUserGame = homeTeam.name === state.userTeam?.name || awayTeam.name === state.userTeam?.name;
+        const skillsToPass = isUserGame ? userCoachSkills : undefined;
+        const simulatedGameResult = simulateGame(homeTeam, awayTeam, gameId, undefined, skillsToPass);
+        gameLogs.push(simulatedGameResult);
+
+        const forecast = recordGameDay(homeTeam, awayTeam, week, gameId);
+        if (homeTeam.name === state.userTeam?.name) {
+            newUserTeamAttendance.push({
+                gameId,
+                opponent: awayTeam.name,
+                attendance: forecast.attendance,
+                capacity: forecast.capacity,
+                revenue: forecast.revenue,
+                week,
+                simulated: false,
+            });
+        }
+
+        const gamesForWeek = updatedSchedule[week - 1] || [];
+        const gameIndex = gamesForWeek.findIndex(g =>
+            (g as any).gameEventId === event.id ||
+            ((g.homeTeam === homeTeam.name && g.awayTeam === awayTeam.name) && (!g.played || isSameISO(g.date || dateISO, dateISO)))
+        );
+        if (gameIndex !== -1) {
+            gamesForWeek[gameIndex] = {
+                ...gamesForWeek[gameIndex],
+                homeScore: simulatedGameResult.homeScore,
+                awayScore: simulatedGameResult.awayScore,
+                played: true,
+                date: gamesForWeek[gameIndex].date || dateISO,
+            };
+        }
+        updatedSchedule[week - 1] = gamesForWeek;
+    }
+
+    gameLogs.forEach(boxScore => {
+        const homeTeam = teamsByName.get(boxScore.homeTeam);
+        const awayTeam = teamsByName.get(boxScore.awayTeam);
+        if (!homeTeam || !awayTeam) return;
+
+        if (boxScore.homeScore > boxScore.awayScore) {
+            homeTeam.record.wins++;
+            awayTeam.record.losses++;
+            applyHeadCoachResult(homeTeam, true);
+            applyHeadCoachResult(awayTeam, false);
+            homeTeam.fanInterest += 0.5;
+            awayTeam.fanInterest -= 0.5;
+            homeTeam.playbookFamiliarity = clamp(homeTeam.playbookFamiliarity + 2, 0, 100);
+            awayTeam.playbookFamiliarity = clamp(awayTeam.playbookFamiliarity + 1, 0, 100);
+            homeTeam.fanMorale = clamp(homeTeam.fanMorale + 3, 0, 100);
+            awayTeam.fanMorale = clamp(awayTeam.fanMorale - 2, 0, 100);
+            if (homeTeam.isUserTeam && updatedCoach) {
+                updatedCoach.contract.progress.wins++;
+                updatedCoach.xp += 10;
+                if (updatedCoach.xp >= updatedCoach.level * 10) {
+                    updatedCoach.level++;
+                    updatedCoach.skillPoints++;
+                    updatedCoach.xp = updatedCoach.xp - (updatedCoach.level - 1) * 10;
+                }
+            }
+        } else {
+            awayTeam.record.wins++;
+            homeTeam.record.losses++;
+            applyHeadCoachResult(awayTeam, true);
+            applyHeadCoachResult(homeTeam, false);
+            awayTeam.fanInterest += 0.5;
+            homeTeam.fanInterest -= 0.5;
+            awayTeam.playbookFamiliarity = clamp(awayTeam.playbookFamiliarity + 2, 0, 100);
+            homeTeam.playbookFamiliarity = clamp(homeTeam.playbookFamiliarity + 1, 0, 100);
+            awayTeam.fanMorale = clamp(awayTeam.fanMorale + 3, 0, 100);
+            homeTeam.fanMorale = clamp(homeTeam.fanMorale - 2, 0, 100);
+            if (awayTeam.isUserTeam && updatedCoach) {
+                updatedCoach.contract.progress.wins++;
+                updatedCoach.xp += 10;
+                if (updatedCoach.xp >= updatedCoach.level * 10) {
+                    updatedCoach.level++;
+                    updatedCoach.skillPoints++;
+                    updatedCoach.xp = updatedCoach.xp - (updatedCoach.level - 1) * 10;
+                }
+            }
+        }
+    });
+
+    return {
+        updatedAllTeams: teamsCopy,
+        updatedSchedule,
+        gameLogs,
+        newUserTeamAttendance,
+        updatedCoach,
+        simulatedWeeks: Array.from(simulatedWeeksSet.values()).sort((a, b) => a - b),
+        processedEventIds,
+    };
 };
 
 
@@ -9936,17 +10445,410 @@ const processDailyNBAGames = (state: GameState, dayIndex: number): Partial<GameS
     };
 };
 
+const diffDaysISO = (fromISO: string, toISO: string): number => {
+    const from = new Date(fromISO);
+    const to = new Date(toISO);
+    const ms = to.getTime() - from.getTime();
+    return Math.floor(ms / 86400000);
+};
+
+const computeRecruitingWeekFromDate = (seasonStartISO: string, currentISO: string): number => {
+    const dayIndex = Math.max(0, diffDaysISO(seasonStartISO, currentISO));
+    // Roughly 4 calendar days per "recruiting week" to keep pacing similar to the old week-based model.
+    return clamp(1 + Math.floor(dayIndex / 4), 1, 31);
+};
+
+const getTeamScholarshipSlotsRemaining = (team: Team, recruits: Recruit[]): number => {
+    const returning = team.roster.filter(p => p.year !== 'Sr').length;
+    const projectedOpenSlots = Math.max(0, 13 - returning);
+    const commits = recruits.filter(r => r.verbalCommitment === team.name).length;
+    return Math.max(0, projectedOpenSlots - commits);
+};
+
+const countOutstandingOffersForTeam = (teamName: string, recruits: Recruit[]): number => {
+    return recruits.filter(r =>
+        (r.cpuOffers || []).includes(teamName) &&
+        !r.verbalCommitment &&
+        !(r.declinedOffers || []).includes(teamName)
+    ).length;
+};
+
+const processRecruitingDayActions = (
+    teams: Team[],
+    recruits: Recruit[],
+    userTeamName: string,
+    recruitingWeek: number,
+    currentDateISO: string,
+    seasonStartISO: string,
+    userCoachSkills?: string[]
+): Recruit[] => {
+    const updatedRecruits = JSON.parse(JSON.stringify(recruits)) as Recruit[];
+    const teamsByName = new Map(teams.map(t => [t.name, t]));
+    const recruitsById = new Map(updatedRecruits.map(r => [r.id, r]));
+    const daysSinceSeasonStart = Math.max(0, diffDaysISO(seasonStartISO, currentDateISO));
+
+    // 1. Process Pending Commitments (Daily Trickle)
+    updatedRecruits.forEach(r => {
+        if (r.pendingCommitment && !r.verbalCommitment) {
+             // If date reached or passed
+             // Compare ISO strings directly (YYYY-MM-DD) works if strict format
+             if (currentDateISO >= r.pendingCommitment.date && daysSinceSeasonStart >= 7) {
+                  r.verbalCommitment = r.pendingCommitment.school;
+                  r.softCommitment = !r.pendingCommitment.isHard;
+                  r.isTargeted = false;
+                  r.recruitmentStage = r.pendingCommitment.isHard ? 'HardCommit' : 'SoftCommit';
+                  r.commitWeek = recruitingWeek;
+                  r.lastRecruitingNews = r.pendingCommitment.news;
+                  if (r.userHasOffered) r.userHasOffered = false;
+                  r.pendingCommitment = undefined;
+             }
+         }
+     });
+
+    // Daily momentum decay so stale offers can cycle and the pool doesn't freeze after early season.
+    // Decay is deterministic (stable hash) and slow enough that momentum still matters for a while.
+    updatedRecruits.forEach(r => {
+        if (!r.teamMomentum) return;
+        Object.keys(r.teamMomentum).forEach(teamName => {
+            const v = r.teamMomentum?.[teamName] ?? 0;
+            const shouldDecayToday = stableIntBetween(`${currentDateISO}:${r.id}:${teamName}:mom`, 0, 2) === 0; // ~1/3 days
+            if (!shouldDecayToday) return;
+            if (v > 0) r.teamMomentum![teamName] = v - 1;
+            else if (v < 0) r.teamMomentum![teamName] = v + 1;
+            if (r.teamMomentum![teamName] === 0) delete r.teamMomentum![teamName];
+        });
+    });
+
+    const sortedRecruits = [...updatedRecruits].sort((a, b) => (b.overall + b.potential) - (a.overall + a.potential));
+
+    const early = recruitingWeek <= 4;
+    const mid = recruitingWeek > 4 && recruitingWeek <= 8;
+    const late = recruitingWeek > 8;
+
+    const cpuTeams = [...teams]
+        .filter(t => !t.isUserTeam)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const recordCpuOffer = (target: Recruit, team: Team) => {
+        if (target.verbalCommitment) return;
+        if ((target.declinedOffers || []).includes(team.name)) return;
+        if ((target.cpuOffers || []).includes(team.name)) return;
+
+        target.cpuOffers = [...(target.cpuOffers || []), team.name];
+        if (!target.teamMomentum) target.teamMomentum = {};
+        target.teamMomentum[team.name] = clamp((target.teamMomentum[team.name] ?? 0) + (mid ? 4 : 3), -20, 20);
+        if (!target.offerHistory) target.offerHistory = [];
+        target.offerHistory.push({
+            teamName: team.name,
+            week: recruitingWeek,
+            date: currentDateISO,
+            pitchType: pickOfferPitchTypeForTeam(target, team),
+            source: 'CPU',
+        });
+    };
+
+    const revokeCpuOffer = (target: Recruit, teamName: string) => {
+        if (!(target.cpuOffers || []).includes(teamName)) return;
+        target.cpuOffers = (target.cpuOffers || []).filter(x => x !== teamName);
+        if (!target.offerHistory) target.offerHistory = [];
+        for (let i = target.offerHistory.length - 1; i >= 0; i--) {
+            const entry = target.offerHistory[i]!;
+            if (entry.teamName === teamName && !entry.revoked) {
+                target.offerHistory[i] = { ...entry, revoked: true };
+                break;
+            }
+        }
+        if (!target.teamMomentum) target.teamMomentum = {};
+        target.teamMomentum[teamName] = clamp((target.teamMomentum[teamName] ?? 0) - 2, -20, 20);
+    };
+
+    cpuTeams.forEach(team => {
+        const slotsRemaining = getTeamScholarshipSlotsRemaining(team, updatedRecruits);
+        const outstanding = countOutstandingOffersForTeam(team.name, updatedRecruits);
+        const capFactor = early ? 2.0 : mid ? 1.6 : late ? 1.2 : 1.0;
+        const maxOutstanding = Math.max(2, Math.round(slotsRemaining * capFactor + (team.prestige >= 80 ? 1 : 0)));
+
+        // Pull "unresponsive" offers after 14 days and reallocate elsewhere.
+        // Unresponsive = offer is old and has not generated positive momentum.
+        if (outstanding > 0) {
+            const offered = updatedRecruits
+                .filter(r => (r.cpuOffers || []).includes(team.name) && !r.verbalCommitment)
+                .map(r => {
+                    const lastOffer = [...(r.offerHistory || [])].reverse().find(e => e.teamName === team.name && !e.revoked) || null;
+                    const offerAgeDays = lastOffer?.date ? Math.max(0, diffDaysISO(lastOffer.date, currentDateISO)) : 0;
+                    const momentum = r.teamMomentum?.[team.name] ?? 0;
+                    return { r, offerAgeDays, momentum };
+                })
+                // Always recycle very old offers; otherwise recycle moderately old offers that aren't gaining traction.
+                .filter(x => (x.offerAgeDays >= 30 && x.momentum <= 10) || (x.offerAgeDays >= 18 && x.momentum <= 4))
+                .sort((a, b) => b.offerAgeDays - a.offerAgeDays);
+
+            offered.slice(0, 2).forEach(({ r }) => revokeCpuOffer(r, team.name));
+        }
+
+        // If we have no slots left, start trimming longshots more aggressively.
+        if (slotsRemaining <= 0 && outstanding > 0) {
+            const offered = updatedRecruits
+                .filter(r => (r.cpuOffers || []).includes(team.name) && !r.verbalCommitment)
+                .map(r => ({ r, m: r.teamMomentum?.[team.name] ?? 0 }))
+                .sort((a, b) => a.m - b.m);
+            offered.slice(0, Math.min(2, offered.length)).forEach(({ r }) => revokeCpuOffer(r, team.name));
+            return;
+        }
+
+        if (outstanding > maxOutstanding) {
+            const offered = updatedRecruits
+                .filter(r => (r.cpuOffers || []).includes(team.name) && !r.verbalCommitment)
+                .map(r => ({ r, m: r.teamMomentum?.[team.name] ?? 0 }))
+                .sort((a, b) => a.m - b.m);
+            const toRevoke = outstanding - maxOutstanding;
+            offered.slice(0, toRevoke).forEach(({ r }) => revokeCpuOffer(r, team.name));
+        }
+
+        if (slotsRemaining <= 0) return;
+        if (countOutstandingOffersForTeam(team.name, updatedRecruits) >= maxOutstanding) return;
+
+        const needs = calculateTeamNeeds(team);
+        const teamRegion = getRegionForState(team.state);
+
+        const reachTier =
+            team.prestige >= 85 ? 5 :
+            team.prestige >= 75 ? 4 :
+            team.prestige >= 60 ? 3 :
+            2;
+
+        // Offer board depth should expand as the season progresses so teams can fill classes.
+        // A shallow late-season board causes the AI to keep re-offering only the very top recruits,
+        // leaving most of the pool with few/no offers and stalling commitments.
+        const boardSize = early
+            ? 85
+            : mid
+                ? 125
+                : clamp(150 + Math.round(Math.max(0, recruitingWeek - 9) * 6), 150, 260);
+        const board = sortedRecruits
+            .filter(r => !r.verbalCommitment)
+            .map(r => {
+                const need = needs.includes(r.position) || (r.secondaryPosition && needs.includes(r.secondaryPosition)) ? 1 : 0;
+                const recruitRegion = r.region || getRegionForState(r.homeState);
+                const regionBonus = recruitRegion && teamRegion && recruitRegion === teamRegion ? 5 : 0;
+                const homeStateBonus = r.homeState === team.state ? 10 : 0;
+                const reachPenalty = r.stars > reachTier ? (r.stars - reachTier) * 14 : 0;
+                const base = r.overall * 0.65 + r.potential * 0.35 + r.stars * 6;
+                const score = base + (need ? 14 : 0) + regionBonus + homeStateBonus - reachPenalty;
+                return { r, score };
+            })
+            .sort((a, b) => b.score - a.score)
+            .slice(0, boardSize)
+            .map(x => x.r);
+
+        const offerCandidates = board.filter(r => !(r.cpuOffers || []).includes(team.name) && !(r.declinedOffers || []).includes(team.name));
+        // Ensure lower-prestige teams still participate; otherwise the offer ecosystem collapses and most recruits never commit.
+        const offersKey = `${currentDateISO}:${team.name}:offer`;
+        const maxOffersToday = (() => {
+            if (team.prestige >= 86) return 1;
+            if (team.prestige >= 78) return stableIntBetween(offersKey, 0, 1) === 0 ? 1 : 0; // ~50%
+            if (team.prestige >= 70) return stableIntBetween(offersKey, 0, 2) === 0 ? 1 : 0; // ~33%
+            if (team.prestige >= 62) return stableIntBetween(offersKey, 0, 3) === 0 ? 1 : 0; // ~25%
+            if (team.prestige >= 55) return stableIntBetween(offersKey, 0, 4) === 0 ? 1 : 0; // ~20%
+            return stableIntBetween(offersKey, 0, 6) === 0 ? 1 : 0; // ~14%
+        })();
+        let offersMade = 0;
+
+        for (const target of offerCandidates) {
+            if (offersMade >= maxOffersToday) break;
+            if (countOutstandingOffersForTeam(team.name, updatedRecruits) >= maxOutstanding) break;
+            recordCpuOffer(target, team);
+            offersMade++;
+
+            // If this recruit is in a package deal, mirror the offer to the linked recruit(s) immediately.
+            const packageDealLinks = (target.relationships || []).filter(isPackageDealLink);
+            for (const link of packageDealLinks) {
+                const other = recruitsById.get(link.personId);
+                if (!other) continue;
+                if (other.verbalCommitment) continue;
+                if ((other.declinedOffers || []).includes(team.name)) continue;
+                recordCpuOffer(other, team);
+            }
+        }
+    });
+
+    // 2. Daily commitment decisions (locked out for the first 7 days of the season).
+    if (daysSinceSeasonStart >= 7) {
+        const decisionPressure = getDecisionPressure(recruitingWeek, false);
+        const teamCommitCounts = new Map<string, number>();
+        updatedRecruits.forEach((r: Recruit) => {
+            if (r.verbalCommitment) {
+                teamCommitCounts.set(r.verbalCommitment, (teamCommitCounts.get(r.verbalCommitment) || 0) + 1);
+            }
+        });
+
+        const seedKeyPrefix = `${currentDateISO}:${recruitingWeek}`;
+        updatedRecruits.forEach((r: Recruit) => {
+            if (r.verbalCommitment) return;
+            if (r.pendingCommitment) return;
+            if (r.recruitmentStage === 'Signed') return;
+
+            const offers = [
+                ...(r.cpuOffers || []),
+                ...(r.userHasOffered ? [userTeamName] : []),
+            ].filter(teamName => !(r.declinedOffers || []).includes(teamName));
+            if (!offers.length) return;
+
+            const offerDetails = offers
+                .map(teamName => {
+                    const team = teamsByName.get(teamName);
+                    if (!team) return null;
+                    return {
+                        name: teamName,
+                        score: calculateRecruitInterestScore(
+                            r,
+                            team,
+                            { gameInSeason: recruitingWeek, isSigningPeriod: false },
+                            teamName === userTeamName ? userCoachSkills : undefined
+                        ),
+                    };
+                })
+                .filter(Boolean) as { name: string; score: number }[];
+
+            offerDetails.sort((a, b) => b.score - a.score);
+            const topOffer = offerDetails[0];
+            if (!topOffer) return;
+
+            const { shares } = buildRecruitOfferShortlist(offerDetails, {
+                min: 3,
+                max: 6,
+                leaderWindow: 10,
+                seedKey: `${seedKeyPrefix}:${r.id}:dailyCommit`,
+                temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r),
+            });
+
+            const topShare = shares.get(topOffer.name) ?? 0;
+            const runnerUp = offerDetails[1];
+            const interestDifference = runnerUp ? topOffer.score - runnerUp.score : 99;
+
+            const minCommitWeek =
+                r.stars >= 5 ? 3 :
+                r.stars === 4 ? 2 :
+                1;
+            if (recruitingWeek < minCommitWeek) return;
+
+            const earlySeason = recruitingWeek <= 4;
+            const midSeason = recruitingWeek > 4 && recruitingWeek <= 8;
+            const offerCount = offerDetails.length;
+            const pressureAdjustment = Math.round(decisionPressure * 8);
+
+            const leaderTeam = teamsByName.get(topOffer.name);
+            let scarcityMod = 0;
+            if (leaderTeam) {
+                const returning = leaderTeam.roster.filter(p => p.year !== 'Sr').length;
+                const commits = teamCommitCounts.get(topOffer.name) || 0;
+                const slots = 13 - returning - commits;
+                if (slots <= 1) scarcityMod = 8;
+                else if (slots <= 2) scarcityMod = 4;
+            }
+
+            // Late-cycle acceleration: by Jan/Feb, most recruits should be committing even if their absolute score isn't elite.
+            // We drop the absolute score gate progressively after week 9 to avoid a "December cliff" where commitments stall.
+            const lateWeeks = Math.max(0, recruitingWeek - 9);
+            const lateDrop = Math.round(clamp(lateWeeks / 16, 0, 1) * 12) + (recruitingWeek >= 26 ? Math.round(clamp((recruitingWeek - 26) / 5, 0, 1) * 6) : 0); // 0..18
+            const starAdj = r.stars >= 5 ? 3 : r.stars === 4 ? 1 : r.stars <= 2 ? -3 : 0;
+            const baseScoreGate = (earlySeason ? 90 : midSeason ? 84 : 78) - lateDrop + starAdj;
+            const absoluteScoreGate = clamp(baseScoreGate - Math.floor(offerCount / 4) * 2 - pressureAdjustment - scarcityMod, 45, 92);
+            // After week ~10, allow "relative" commitments: if the recruit clearly prefers one school, they can still commit
+            // even if the absolute score isn't high (i.e., they're choosing the best of available options).
+            const relativeScoreGate = clamp(62 - Math.round(Math.max(0, recruitingWeek - 10) * 1.25) + (r.stars >= 4 ? 3 : 0), 30, 62);
+            const scoreGate = recruitingWeek >= 10 ? Math.min(absoluteScoreGate, relativeScoreGate) : absoluteScoreGate;
+            const shareGate = clamp(78 - offerCount * 4 - Math.round(recruitingWeek * 1.5) - Math.round(decisionPressure * 10) - scarcityMod * 2, 15, 78);
+            const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - Math.round(decisionPressure * 2) - Math.ceil(scarcityMod / 2), 1, 14);
+
+            const hasClearLead = offerDetails.length === 1 || interestDifference >= leadGate;
+            const meetsGates = topOffer.score >= scoreGate && topShare >= shareGate && hasClearLead;
+
+            // Convert weekly-style gates into a daily chance with a long ramp across the season.
+            // This keeps early-season commitments rare, but pushes the pool to mostly committed by Feb.
+            const desperationEligible = !meetsGates && recruitingWeek >= 12 && r.stars <= 3 && offers.length <= 4;
+            const desperationScoreGate = clamp(44 - Math.round((recruitingWeek - 12) * 0.8), 26, 44);
+            const desperationShareGate = clamp(52 - Math.round((recruitingWeek - 12) * 1.1), 24, 52);
+            const canDesperationCommit = desperationEligible && topOffer.score >= desperationScoreGate && topShare >= desperationShareGate;
+
+            // Late-cycle auto-resolution: after mid-January, clear leaders should start collecting commits across the board.
+            const lateAutoEligible = !meetsGates && !canDesperationCommit && recruitingWeek >= 18 && offers.length >= 2 && hasClearLead;
+            const lateAutoShareGate = clamp(48 - Math.round((recruitingWeek - 18) * 1.1), 26, 48);
+            const lateAutoScoreGate = clamp(54 - Math.round((recruitingWeek - 18) * 1.2) + (r.stars >= 4 ? 5 : 0), 30, 65);
+            const canLateAutoCommit = lateAutoEligible && topShare >= lateAutoShareGate && topOffer.score >= lateAutoScoreGate;
+
+            // Ultra-late commit pressure: by late Feb, the majority of recruits should be committed even if their offers are mediocre.
+            // This is intentionally "soft" (probabilistic) and depends on having at least one offer + some leader share.
+            const ultraLateEligible = !meetsGates && !canDesperationCommit && !canLateAutoCommit && recruitingWeek >= 22 && offers.length >= 1;
+            const ultraLateTime = clamp((recruitingWeek - 22) / 9, 0, 1); // ramps Jan->Feb
+            const ultraLateShareFactor = clamp((topShare - 18) / 82, 0, 1);
+            const ultraLateStarBrake = r.stars >= 4 ? 0.75 : 1.0;
+            const ultraLateChance = ultraLateEligible ? clamp(0.025 + ultraLateTime * 0.19, 0.025, 0.215) * ultraLateShareFactor * ultraLateStarBrake : 0;
+
+            if (!meetsGates && !canDesperationCommit && !canLateAutoCommit && ultraLateChance <= 0) return;
+
+            const seasonRamp = clamp((daysSinceSeasonStart - 7) / 75, 0, 1); // ramps over ~2.5 months
+            const lateBoost = clamp((recruitingWeek - 10) / 12, 0, 1) * 0.22;
+            const effectiveScoreGate = canDesperationCommit ? desperationScoreGate : canLateAutoCommit ? lateAutoScoreGate : scoreGate;
+            const effectiveShareGate = canDesperationCommit ? desperationShareGate : canLateAutoCommit ? lateAutoShareGate : shareGate;
+
+            const scoreEdge = clamp((topOffer.score - effectiveScoreGate) / 18, 0, 1);
+            const shareEdge = clamp((topShare - effectiveShareGate) / 24, 0, 1);
+            const baseChance = canDesperationCommit
+                ? clamp(0.12 + scoreEdge * 0.30 + shareEdge * 0.30, 0.12, 0.65)
+                : canLateAutoCommit
+                    ? clamp(0.14 + scoreEdge * 0.33 + shareEdge * 0.33, 0.14, 0.82)
+                    : clamp(0.10 + scoreEdge * 0.34 + shareEdge * 0.34, 0.10, 0.78);
+            const lateFloor = clamp((recruitingWeek - 14) / 12, 0, 1) * 0.10;
+            const commitChance = clamp(baseChance * (0.50 + seasonRamp * 0.85 + lateBoost) + lateFloor + ultraLateChance, 0.06, 0.96);
+
+            const commitRoll = stableFloatBetween(`${seedKeyPrefix}:${r.id}:commitRoll`, 0, 1);
+            if (commitRoll > commitChance) return;
+
+            const daysDelay = stableIntBetween(`${seedKeyPrefix}:${r.id}:delay`, 0, 3);
+            const earliestCommitDate = addDaysISO(seasonStartISO, 7);
+            const desiredCommitDate = addDaysISO(currentDateISO, daysDelay);
+            const commitDate = desiredCommitDate < earliestCommitDate ? earliestCommitDate : desiredCommitDate;
+
+            r.pendingCommitment = {
+                school: topOffer.name,
+                date: commitDate,
+                isHard: recruitingWeek > 8,
+                news: `${r.name} committed to ${topOffer.name}.`,
+            };
+        });
+    }
+
+    return updatedRecruits;
+};
+
 export const runDailySimulation = (
     state: GameState,
     forceSimUserGame: boolean = false
 ): { 
     updatedState: Partial<GameState>, 
     messages: string[],
-    shouldSimulateGameWeek?: number
+    shouldSimulateGamesToday?: boolean
 } => {
     const currentDate = state.currentDate || state.seasonAnchors?.seasonStart || SEASON_START_DATE;
     const eventsToday = state.eventQueue?.filter(e => isSameISO(e.date, currentDate) && !e.processed) || [];
     const gameEventsToday = eventsToday.filter(e => e.type === EventType.GAME);
+    const seasonStartISO = state.seasonAnchors?.seasonStart || SEASON_START_DATE;
+    const coachSkills = Object.keys(state.coach?.skills || {});
+
+    // Weekly cadence is deprecated; treat legacy saves as daily.
+    const recruitingCadence = state.recruitingCadence === 'weekly' ? 'daily' : (state.recruitingCadence ?? 'daily');
+    const isNbaMode = typeof state.status === 'string' && state.status.startsWith('NBA_');
+    const canRecruitDaily =
+        recruitingCadence === 'daily' &&
+        state.userTeam &&
+        state.userTeam.name &&
+        state.gameInSeason <= 31 &&
+        state.status !== GameStatus.TOURNAMENT &&
+        state.status !== GameStatus.SIGNING_PERIOD &&
+        state.status !== GameStatus.OFFSEASON &&
+        !isNbaMode;
+    const recruitingWeek = canRecruitDaily ? computeRecruitingWeekFromDate(state.seasonAnchors?.seasonStart || SEASON_START_DATE, currentDate) : state.gameInSeason;
 
     if (gameEventsToday.length > 0) {
         const userGameEvent = state.userTeam
@@ -9957,12 +10859,21 @@ export const runDailySimulation = (
             const opponent = state.userTeam!.name === userGameEvent.payload.homeTeam
                 ? userGameEvent.payload.awayTeam
                 : userGameEvent.payload.homeTeam;
-            return { updatedState: {}, messages: [`Game day against ${opponent}!`] };
+            const updatedRecruits = canRecruitDaily
+                ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+                : state.recruits;
+            return { updatedState: { recruits: updatedRecruits }, messages: [`Game day against ${opponent}!`] };
         }
 
-        const week = Number(gameEventsToday[0]?.payload?.week || state.gameInSeason || 1);
-        return { updatedState: {}, messages: [], shouldSimulateGameWeek: week };
+        const updatedRecruits = canRecruitDaily
+            ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+            : state.recruits;
+        return { updatedState: { recruits: updatedRecruits }, messages: [], shouldSimulateGamesToday: true };
     }
 
-    return { updatedState: { currentDate: addDaysISO(currentDate, 1) }, messages: [] };
+    const nextDate = addDaysISO(currentDate, 1);
+    const updatedRecruits = canRecruitDaily
+        ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+        : state.recruits;
+    return { updatedState: { currentDate: nextDate, recruits: updatedRecruits }, messages: [] };
 };

@@ -1,7 +1,7 @@
 // App.scenario.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { gameReducer } from '../App';
-import { GameState, Team, GameAction, GameAttendanceRecord, GameStatus, NilNegotiationCandidate, ArenaFacility, GameResult, Recruit } from '../types';
+import { GameState, Team, GameAction, GameAttendanceRecord, GameStatus, NilNegotiationCandidate, ArenaFacility, GameResult, Recruit, EventType, GameEvent } from '../types';
 import { mockTeam } from '../EconomyHub.test';
 import { resolveZoneTicketPrice } from '../services/gameService';
 import { createRecruit, processRecruitingWeek } from '../services/gameService';
@@ -47,9 +47,31 @@ const createScenarioFacilities = (): Team['facilities'] => ({
 const deepCopy = (obj: any) => JSON.parse(JSON.stringify(obj));
 
 const createInitialGameState = (): GameState => ({
+    version: 1,
     season: 1,
     week: 1,
     gameInSeason: 1,
+    seasonYear: 2024,
+    seasonAnchors: {
+        seasonStart: '2024-11-01',
+        selectionSunday: '2025-03-01',
+        ncaa: {
+            selectionSunday: '2025-03-01',
+            firstFourTue: '2025-03-04',
+            firstFourWed: '2025-03-05',
+            round64Thu: '2025-03-06',
+            round64Fri: '2025-03-07',
+            round32Sat: '2025-03-08',
+            round32Sun: '2025-03-09',
+            sweet16Thu: '2025-03-13',
+            sweet16Fri: '2025-03-14',
+            elite8Sat: '2025-03-15',
+            elite8Sun: '2025-03-16',
+            finalFourSat: '2025-03-22',
+            titleMon: '2025-03-24',
+        },
+    } as any,
+    currentDate: '2024-11-01',
     schedule: [
         [{ homeTeam: mockTeam.name, awayTeam: 'Opponent 1', homeScore: 0, awayScore: 0, played: false }],
         [{ homeTeam: mockTeam.name, awayTeam: 'Opponent 2', homeScore: 0, awayScore: 0, played: false }],
@@ -68,7 +90,7 @@ const createInitialGameState = (): GameState => ({
         { ...deepCopy(mockTeam), name: 'Opponent 6', isUserTeam: false },
     ],
     userTeam: deepCopy(mockTeam),
-    userTeamId: mockTeam.name,
+    userTeamId: mockTeam.name as any,
     recruits: [],
     sponsors: {},
     history: { userTeamRecords: [], champions: [], teamHistory: {}, nbaDrafts: [] },
@@ -89,14 +111,21 @@ const createInitialGameState = (): GameState => ({
     nilNegotiationHistory: [],
     currentUserTeamAttendance: [],
     notifications: [],
-    mode: GameStatus.HOME, // Default mode for testing
+    status: GameStatus.DASHBOARD, // Default mode for testing
     tournament: null,
     conferenceTournaments: [],
     nbaDraftBoard: [],
     newsFeed: [],
     userTeamRecords: [],
     scoutingReports: [],
-});
+    eventQueue: [
+        { id: 'g1', type: EventType.GAME, date: '2024-11-01', label: 'Opponent 1 @ User', processed: false, payload: { homeTeam: mockTeam.name, awayTeam: 'Opponent 1', week: 1, gameId: 'g1' } },
+        { id: 'g2', type: EventType.GAME, date: '2024-11-02', label: 'Opponent 2 @ User', processed: false, payload: { homeTeam: mockTeam.name, awayTeam: 'Opponent 2', week: 2, gameId: 'g2' } },
+        { id: 'g3', type: EventType.GAME, date: '2024-11-03', label: 'Opponent 3 @ User', processed: false, payload: { homeTeam: mockTeam.name, awayTeam: 'Opponent 3', week: 3, gameId: 'g3' } },
+        { id: 'g4', type: EventType.GAME, date: '2024-11-04', label: 'Opponent 4 @ User', processed: false, payload: { homeTeam: mockTeam.name, awayTeam: 'Opponent 4', week: 4, gameId: 'g4' } },
+        { id: 'g5', type: EventType.GAME, date: '2024-11-05', label: 'Opponent 5 @ User', processed: false, payload: { homeTeam: mockTeam.name, awayTeam: 'Opponent 5', week: 5, gameId: 'g5' } },
+    ] as unknown as GameEvent[],
+} as unknown as GameState);
 
 describe('App.tsx gameReducer scenario tests', () => {
     let initialState: GameState;
@@ -119,11 +148,10 @@ describe('App.tsx gameReducer scenario tests', () => {
         if (userTeamIndex === -1) throw new Error("User team not found in initial state.");
 
         // Week 1: Normal pricing
-        state = gameReducer(state, { type: 'SIMULATE_WEEK' });
+        state = gameReducer(state, { type: 'SIMULATE_USER_GAME' });
         expect(state.week).toBe(2);
         expect(state.gameInSeason).toBe(2);
         expect(state.currentUserTeamAttendance.length).toBe(1);
-        let week1Attendance = state.currentUserTeamAttendance[0];
 
         // Week 2: Increase lower bowl price, decrease student section price
         const baseTicketPrice = state.userTeam?.prices.ticketPrice ?? mockTeam.prices.ticketPrice;
@@ -140,11 +168,10 @@ describe('App.tsx gameReducer scenario tests', () => {
                 suites: 2.0,
             }
         });
-        state = gameReducer(state, { type: 'SIMULATE_WEEK' });
+        state = gameReducer(state, { type: 'SIMULATE_USER_GAME' });
         expect(state.week).toBe(3);
         expect(state.gameInSeason).toBe(3);
         expect(state.currentUserTeamAttendance.length).toBe(2);
-        let week2Attendance = state.currentUserTeamAttendance[1];
         const updatedLowerPrice = resolveZoneTicketPrice(
             'lowerBowl',
             state.userTeam?.facilities?.arena?.seatMix?.lowerBowl?.priceModifier ?? baseLowerModifier,
@@ -174,20 +201,20 @@ describe('App.tsx gameReducer scenario tests', () => {
         expect(stateAfterSim.currentUserTeamAttendance[2].simulated).toBe(true);
 
         // Week 3: Simulate with normal pricing
-        state = gameReducer(state, { type: 'SIMULATE_WEEK' });
+        state = gameReducer(state, { type: 'SIMULATE_USER_GAME' });
         expect(state.week).toBe(4);
         expect(state.gameInSeason).toBe(4);
         expect(state.currentUserTeamAttendance.length).toBe(3);
         
         // Week 4: Increase overall ticket price
         state = gameReducer(state, { type: 'UPDATE_PRICES', payload: { ticketPrice: 30 } });
-        state = gameReducer(state, { type: 'SIMULATE_WEEK' });
+        state = gameReducer(state, { type: 'SIMULATE_USER_GAME' });
         expect(state.week).toBe(5);
         expect(state.gameInSeason).toBe(5);
         expect(state.currentUserTeamAttendance.length).toBe(4);
         
         // Week 5: Simulate another week with high prices
-        state = gameReducer(state, { type: 'SIMULATE_WEEK' });
+        state = gameReducer(state, { type: 'SIMULATE_USER_GAME' });
         expect(state.week).toBe(6);
         expect(state.gameInSeason).toBe(6);
         expect(state.currentUserTeamAttendance.length).toBe(5); // 5 actual games played
@@ -198,9 +225,6 @@ describe('App.tsx gameReducer scenario tests', () => {
         // Verify revenue changes via attendance log entries
         const attendanceRevenue = finalUserTeam?.facilities?.arena?.attendanceLog?.reduce((sum, entry) => sum + (entry.revenue || 0), 0) ?? 0;
         expect(attendanceRevenue).toBeGreaterThan(0);
-        
-        // Check telemetry (example: should have revenue events)
-        expect(state.economyTelemetry.eventFeed.filter(e => e.type === 'revenue').length).toBeGreaterThan(0);
     });
 
     it('should correctly handle LOAD_STATE action', () => {

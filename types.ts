@@ -279,6 +279,7 @@ export type RelationshipLink = {
 export type RecruitOfferHistoryEntry = {
   teamName: string;
   week: number;
+  date?: ISODate;
   pitchType: OfferPitchType;
   source: 'User' | 'CPU';
   revoked?: boolean;
@@ -331,6 +332,8 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   // New Fields for Enhanced Recruiting
   hometownCity?: string;
   hometownState?: string;
+  hometownLat?: number;
+  hometownLon?: number;
   highSchoolName?: string;
   highSchoolType?: 'Public' | 'Private' | 'Prep';
   region?: string;
@@ -366,6 +369,12 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   decisionStyle?: RecruitDecisionStyle;
   commitmentStyle?: RecruitCommitmentStyle;
   fitStrictness?: number; // 0-100, higher = sharper preferences + tougher to win over
+  pendingCommitment?: {
+      school: string;
+      date: string;
+      isHard: boolean;
+      news: string;
+  };
 }
 
 export type RotationPreference = 'balanced' | 'starterHeavy' | 'sevenSecond' | 'threeAndD' | 'defensive';
@@ -1108,6 +1117,7 @@ export interface Team {
   conference: string;
   prestige: number;
   recruitingPrestige: number;
+  location?: { lat: number; lon: number };
   roster: Player[];
   staff: {
     assistants: Staff[];
@@ -1678,6 +1688,7 @@ export interface GameState {
   currentDate: ISODate;
   gameInSeason: number;
   week: number;
+  recruitingCadence?: 'daily' | 'weekly';
   schedule: GameResult[][];
   scheduledGamesById: Record<string, ScheduledGameEvent>;
   teamSchedulesById: Record<string, TeamSchedule>;

@@ -1,6 +1,8 @@
 ﻿
 import React, { useReducer, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { EconomyHub } from './EconomyHub';
+import GeminiIcon from './BRAND LOGOS/Gemini symbol for twins.svg';
+import TreeIcon from './BRAND LOGOS/Tree_icon.svg';
 import { RosterRetentionView } from './RosterRetentionView';
 import { TransferPortalView } from './TransferPortalView';
 import { NbaDraftLotteryView } from './NbaDraftLotteryView';
@@ -82,7 +84,7 @@ import RecruitOfferDetailsModal from './components/RecruitOfferDetailsModal';
 import * as constants from './constants';
 import type { SponsorName } from './types';
 // FIX: Added missing function imports from gameService. This resolves multiple "has no exported member" errors.
-import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForWeek, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, getRecruitOfferShareTemperatureMultiplier, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule, generateRecruitRelationships, recomputeRecruitBoardRanks, applyPackageDealOfferMirroring } from './services/gameService';
+import { initializeGameWorld, simulateGame, processInSeasonDevelopment, processRecruitingWeek, runSimulationForDate, runDailySimulation, advanceToNewSeason, rollOverTeamsForNextSeason, createTournament, generateSchedule, createRecruit, processTraining, autoSetStarters, generateSigningAndProgressionSummaries, processDraft, fillRosterWithWalkOns, calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, getRecruitOfferShareTemperatureMultiplier, calculateSponsorRevenueSnapshot, createSponsorFromName, recalculateSponsorLandscape,  calculateTeamRevenue, calculateCurrentSeasonEarnedRevenue, runInitialRecruitingOffers, calculateTeamNeeds, processEndOfSeasonPrestigeUpdates, randomBetween, generateContractOptions, generateJobOffers, updateCoachReputation, calculateCoachSalary, generateStaffCandidates, calculateOverall, generateFreeAgentStaff, getTrainingPoints, getContactPoints, calculateFanWillingness, seedProgramWealth, getWealthRecruitingBonus, getWealthTrainingBonus, generateInternationalProspects, simulateNBASeason, buildDraftProspectBoard, calculateNBACoachSalary, generateNBAJobOffers, createHeadCoachProfile, ensureArenaFacility, createNilCollectiveProfile, buildEventPlaybookCatalog, buildSponsorQuestDeck, calculateAttendance, clampZonePriceModifier, processTransferPortalOpen, processTransferPortalDay, clamp, processWeeklyFinances, processFacilityConstruction, degradeFacilities, generateSponsorOffers, hireStaff, updateSponsorContracts, updateConcessionPricing, updateMerchPricing, updateTicketPricing, setMerchInventoryStrategy, toggleDynamicPricing, setTravelSettings, scheduleEvent, cancelEvent, calculateBoardPressure, updateStaffPayroll, startCapitalProject, contributeToProject, initializeEconomy, requestFunds, generateBoardExpectations, toContractBoardExpectations, generatePoachingOffers, finalizeNBASeason, formatCurrency, updateTeamWithUserCoach, generateInitialNBAFreeAgents, processNBAWeeklyMoves, applyNBAFreeAgentRetirementRules, buildInitialDraftPickAssets, calculateRetentionProbability, seasonToCalendarYear, generateNBASchedule, buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule, generateRecruitRelationships, recomputeRecruitBoardRanks, applyPackageDealOfferMirroring } from './services/gameService';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './services/draftUtils';
 import { ensurePlayerNilProfile, buildNilNegotiationCandidates, evaluateNilOffer, calculateTeamNilBudget } from './services/nilService';
 import { generateAlumni, updateAlumniRegistry } from './services/alumniService';
@@ -222,6 +224,7 @@ const INTEREST_TIERS: InterestTier[] = [
 ];
 
 const getInterestTier = (interest: number) => INTEREST_TIERS.find(tier => interest >= tier.min) || INTEREST_TIERS[INTEREST_TIERS.length - 1];
+const normalizeInterest = (value: number) => clamp(Math.round(value), 0, 100);
 const formatPotentialValue = (value?: number) => (typeof value === 'number' ? Math.round(value) : '-');
 type FinancialInvestmentType = 'recruitingCampaign' | 'trainingFacilities' | 'marketingPush';
 const FINANCIAL_INVESTMENTS: Record<FinancialInvestmentType, { label: string; cost: number; description: string; affects: 'recruiting' | 'training' | 'marketing'; successMessage: string; impact: string }> = {
@@ -1352,6 +1355,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 eventFeed: [],
             },
             recruits: loadedState.recruits ? recomputeRecruitBoardRanks(loadedState.recruits) : loadedState.recruits,
+            recruitingCadence: 'daily',
             lastSimWeekKey: loadedState.lastSimWeekKey ?? null,
             customDraftPickRules: loadedState.customDraftPickRules ?? [],
         };
@@ -2000,13 +2004,73 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SIMULATE_DAY': {
-        const { updatedState, messages, shouldSimulateGameWeek } = runDailySimulation(state, true);
+        const { updatedState, messages, shouldSimulateGamesToday } = runDailySimulation(state, true);
         let newState: GameState = { ...state, ...updatedState };
         const toastMessage = messages.length > 0 ? messages.join('\n') : null;
 
-        if (shouldSimulateGameWeek) {
-            newState = gameReducer({ ...newState, gameInSeason: shouldSimulateGameWeek }, { type: 'SIMULATE_WEEK' });
-            return { ...newState, toastMessage: toastMessage ?? newState.toastMessage };
+        if (shouldSimulateGamesToday) {
+            const simDate = newState.currentDate || SEASON_START_DATE;
+            const coachSkills = Object.keys(newState.coach?.skills || {});
+            const { updatedAllTeams, updatedSchedule, gameLogs, newUserTeamAttendance, updatedCoach, processedEventIds, simulatedWeeks } = runSimulationForDate(
+                newState,
+                simDate,
+                newState.allTeams,
+                newState.schedule,
+                coachSkills,
+                newState.eventPlaybookCatalog
+            );
+
+            const processedEventQueue = (newState.eventQueue || []).map(e =>
+                processedEventIds.includes(e.id) ? { ...e, processed: true } : e
+            );
+
+            const weeksToFinalize = (simulatedWeeks || []).filter(weekNum => {
+                const weekGames = (updatedSchedule || [])[weekNum - 1] || [];
+                return weekGames.length > 0 && weekGames.every(g => g.played);
+            });
+
+            let finalizedTeams = updatedAllTeams;
+            if (weeksToFinalize.length > 0) {
+                const season = newState.season;
+                const scheduleAfter = updatedSchedule || [];
+
+                weeksToFinalize.forEach(weekNum => {
+                    finalizedTeams = finalizedTeams.map(team => {
+                        let t = processWeeklyFinances(team, season, weekNum, scheduleAfter[weekNum - 1] || []);
+                        t = degradeFacilities(t);
+                        t = processFacilityConstruction(t);
+                        return t;
+                    });
+                });
+
+                finalizedTeams = processInSeasonDevelopment(finalizedTeams, coachSkills);
+            }
+
+            const nextDate = addDaysISO(simDate, 1);
+            const nextWeek = (() => {
+                const schedule = updatedSchedule || [];
+                for (let i = 0; i < schedule.length; i += 1) {
+                    const weekGames = schedule[i] || [];
+                    if (weekGames.some(g => !g.played)) return i + 1;
+                }
+                return schedule.length + 1;
+            })();
+
+            newState = {
+                ...newState,
+                allTeams: finalizedTeams,
+                userTeam: finalizedTeams.find(t => t.isUserTeam) || newState.userTeam,
+                schedule: updatedSchedule,
+                eventQueue: processedEventQueue,
+                currentDate: nextDate,
+                week: nextWeek,
+                gameInSeason: nextWeek,
+                contactsMadeThisWeek: 0,
+                trainingPointsUsedThisWeek: 0,
+                gameLogs: [...newState.gameLogs, ...gameLogs],
+                currentUserTeamAttendance: dedupeAttendanceRecords([...newState.currentUserTeamAttendance, ...newUserTeamAttendance]),
+                coach: updatedCoach,
+            };
         }
 
         if (newState.gameInSeason > 31 && newState.status !== GameStatus.TOURNAMENT && !newState.tournament) {
@@ -2022,7 +2086,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SIMULATE_WEEK': {
-      if (!state.userTeam || state.gameInSeason > 31) return state;
+      // Legacy (deprecated): weekly sim is no longer used. Daily progression simulates only today's games.
+      // Keep this guard to prevent old saves/UI from breaking if they dispatch the action.
+      return state;
+      /* if (!state.userTeam || state.gameInSeason > 31) return state;
       const currentSimKey = `${state.season}-${state.gameInSeason}`;
       if (state.lastSimWeekKey === currentSimKey) {
           return state;
@@ -2101,7 +2168,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                   toastMessage = (toastMessage ? toastMessage + '\n' : '') + visitToast;
                   return {
                       ...r,
-                      interest: Math.max(0, Math.min(100, r.interest + interestChange)),
+                      interest: normalizeInterest(r.interest + interestChange),
                       visitStatus: 'Completed',
                   };
               }
@@ -2411,6 +2478,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         nbaTransactions: state.nbaTransactions ? [...state.nbaTransactions, ...(nbaTransactions || [])] : (nbaTransactions || []),
         selectedNBATeam: resolvedSelectedNBATeam,
       };
+      */
     }
 
 
@@ -3079,7 +3147,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	            const aboveBaseline = Math.abs(difference);
 	            boost = Math.max(1, 2 - aboveBaseline / 30) * urgencyMultiplier * coachabilityMultiplier * maintainMultiplier;
 	          }
-	          const newInterest = Math.min(100, Math.round(r.interest + boost));
+	          const newInterest = normalizeInterest(r.interest + boost);
 	          const teamName = state.userTeam!.name;
 	          const teamMomentum = { ...(r.teamMomentum || {}) };
 	          teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 2, -20, 20);
@@ -3136,7 +3204,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 		                const prestigeBonus = Math.max(0, Math.floor((state.userTeam?.prestige || 50 - 50) / 12));
 		                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
 		                const boost = (randomBetween(18, 25) + prestigeBonus) * coachabilityMultiplier;
-		                const newInterest = Math.min(100, r.interest + boost);
+		                const newInterest = normalizeInterest(r.interest + boost);
 		                const teamName = state.userTeam!.name;
 		                const teamMomentum = { ...(r.teamMomentum || {}) };
 		                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 4, -20, 20);
@@ -3263,15 +3331,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	                const teamMomentum = { ...(r.teamMomentum || {}) };
 	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 5, -20, 20);
 	                const offerHistory = [...(r.offerHistory || [])];
-	                offerHistory.push({ teamName, week: state.week, pitchType, source: 'User' });
+	                offerHistory.push({ teamName, week: state.week, date: state.currentDate, pitchType, source: 'User' });
 	                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
-	                return { ...r, userHasOffered: true, interest: Math.min(100, r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week };
+	                return { ...r, userHasOffered: true, interest: normalizeInterest(r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week };
 	            }
 
 	            if (packageDealLinkedIds.has(r.id) && !r.verbalCommitment && !r.declinedOffers?.includes(teamName)) {
 	                const teamMomentum = { ...(r.teamMomentum || {}) };
 	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 7, -20, 20);
-	                const boosted = clamp(r.interest + 12, 0, 100);
+	                const boosted = normalizeInterest(r.interest + 12);
 	                const lastRecruitingNews = r.lastRecruitingNews || (offeredRecruit ? `${r.name} is considering a package deal with ${offeredRecruit.name}.` : r.lastRecruitingNews);
 	                return boosted === r.interest ? { ...r, teamMomentum, lastRecruitingNews } : { ...r, interest: boosted, teamMomentum, lastRecruitingNews };
 	            }
@@ -3365,7 +3433,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	                    const userTeamName = state.userTeam!.name;
 	                    const teamMomentum = { ...(r.teamMomentum || {}) };
 	                    teamMomentum[userTeamName] = clamp((teamMomentum[userTeamName] ?? 0) - 4, -20, 20);
-	                    return { ...r, interest: Math.max(0, r.interest - interestPenalty), teamMomentum };
+	                    return { ...r, interest: normalizeInterest(r.interest - interestPenalty), teamMomentum };
 	                }
 	                return r;
 	            });
@@ -4420,12 +4488,74 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SIMULATE_USER_GAME': {
-        const { messages, shouldSimulateGameWeek } = runDailySimulation(state, true);
-        if (!shouldSimulateGameWeek) {
+        const { messages, shouldSimulateGamesToday } = runDailySimulation(state, true);
+        if (!shouldSimulateGamesToday) {
             return { ...state, toastMessage: messages.length > 0 ? messages[0] : state.toastMessage };
         }
-        const simulated = gameReducer({ ...state, gameInSeason: shouldSimulateGameWeek }, { type: 'SIMULATE_WEEK' });
-        return { ...simulated, toastMessage: 'Simulated game.' };
+
+        const simDate = state.currentDate || SEASON_START_DATE;
+        const coachSkills = Object.keys(state.coach?.skills || {});
+        const { updatedAllTeams, updatedSchedule, gameLogs, newUserTeamAttendance, updatedCoach, processedEventIds, simulatedWeeks } = runSimulationForDate(
+            state,
+            simDate,
+            state.allTeams,
+            state.schedule,
+            coachSkills,
+            state.eventPlaybookCatalog
+        );
+
+        const processedEventQueue = (state.eventQueue || []).map(e =>
+            processedEventIds.includes(e.id) ? { ...e, processed: true } : e
+        );
+
+        const weeksToFinalize = (simulatedWeeks || []).filter(weekNum => {
+            const weekGames = (updatedSchedule || [])[weekNum - 1] || [];
+            return weekGames.length > 0 && weekGames.every(g => g.played);
+        });
+
+        let finalizedTeams = updatedAllTeams;
+        if (weeksToFinalize.length > 0) {
+            const season = state.season;
+            const scheduleAfter = updatedSchedule || [];
+
+            weeksToFinalize.forEach(weekNum => {
+                finalizedTeams = finalizedTeams.map(team => {
+                    let t = processWeeklyFinances(team, season, weekNum, scheduleAfter[weekNum - 1] || []);
+                    t = degradeFacilities(t);
+                    t = processFacilityConstruction(t);
+                    return t;
+                });
+            });
+
+            finalizedTeams = processInSeasonDevelopment(finalizedTeams, coachSkills);
+        }
+
+        const nextDate = addDaysISO(simDate, 1);
+        const nextWeek = (() => {
+            const schedule = updatedSchedule || [];
+            for (let i = 0; i < schedule.length; i += 1) {
+                const weekGames = schedule[i] || [];
+                if (weekGames.some(g => !g.played)) return i + 1;
+            }
+            return schedule.length + 1;
+        })();
+
+        return {
+            ...state,
+            allTeams: finalizedTeams,
+            userTeam: finalizedTeams.find(t => t.isUserTeam) || state.userTeam,
+            schedule: updatedSchedule,
+            eventQueue: processedEventQueue,
+            currentDate: nextDate,
+            week: nextWeek,
+            gameInSeason: nextWeek,
+            contactsMadeThisWeek: 0,
+            trainingPointsUsedThisWeek: 0,
+            gameLogs: [...state.gameLogs, ...gameLogs],
+            currentUserTeamAttendance: dedupeAttendanceRecords([...state.currentUserTeamAttendance, ...newUserTeamAttendance]),
+            coach: updatedCoach,
+            toastMessage: 'Simulated game.',
+        };
     }
 
     case 'SIMULATE_TRANSFER_PORTAL_DAY': {
@@ -4904,7 +5034,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             });
         });
         let newRecruits = Array.from({ length: 350 }, () => createRecruit());
-        newRecruits = generateRecruitRelationships(newRecruits);
+        newRecruits = generateRecruitRelationships(newRecruits, staffAgedTeams);
         newRecruits = recomputeRecruitBoardRanks(newRecruits);
         newRecruits = runInitialRecruitingOffers(staffAgedTeams, newRecruits);
         newRecruits = applyPackageDealOfferMirroring(newRecruits, staffAgedTeams, newUserTeam.name, 1);
@@ -7771,10 +7901,10 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 };
 
 	const RecruitingViewInner = ({ state, dispatch, colors, isSigningPeriod }: { state: GameState, dispatch: React.Dispatch<GameAction>, colors: TeamColors, isSigningPeriod?: boolean }) => {
-	    const [viewingOffersFor, setViewingOffersFor] = useState<Recruit | null>(null);
+	    const [viewingOffersRecruitId, setViewingOffersRecruitId] = useState<string | null>(null);
+	    const [viewingOffersStartOfferBuilder, setViewingOffersStartOfferBuilder] = useState(false);
 	    const [negativeRecruitingFor, setNegativeRecruitingFor] = useState<Recruit | null>(null);
 	    const [schedulingVisitFor, setSchedulingVisitFor] = useState<Recruit | null>(null);
-	    const [offeringScholarshipFor, setOfferingScholarshipFor] = useState<Recruit | null>(null);
 	    const [showRecruitingAnalytics, setShowRecruitingAnalytics] = useState(false);
 	    const [hideVerballyCommitted, setHideVerballyCommitted] = useState(false);
 	    const [hideSigned, setHideSigned] = useState(false);
@@ -7977,37 +8107,36 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	        return map;
 	    }, [showColTop2, state.recruits, state.userTeam, state.allTeams, state.gameInSeason, teamsByName]);
 
+	    const viewingOffersFor = viewingOffersRecruitId
+	        ? (state.recruits.find(r => r.id === viewingOffersRecruitId) || null)
+	        : null;
+
 	    return (
 	        <div>
 	            {viewingOffersFor && (
 	                <OffersModal 
                     recruit={viewingOffersFor} 
                     userTeamName={state.userTeam.name}
+                    allRecruits={state.recruits}
                     allTeams={state.allTeams}
                     gameInSeason={state.gameInSeason}
                     onOpenRecruitId={(recruitId) => {
-                      const related = state.recruits.find(r => r.id === recruitId);
-                      if (related) setViewingOffersFor(related);
+                      setViewingOffersRecruitId(recruitId);
+                      setViewingOffersStartOfferBuilder(false);
                     }}
                     contactPointsUsed={state.contactsMadeThisWeek}
                     contactPointsMax={getContactPoints(state.userTeam)}
                     scoutLevel={state.userTeam?.scoutingReports?.[viewingOffersFor.id] || 0}
                     actionsDisabled={!!viewingOffersFor.verbalCommitment && viewingOffersFor.verbalCommitment !== state.userTeam.name}
                     onContactRecruit={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: viewingOffersFor.id } })}
-                    onOfferScholarship={() => setOfferingScholarshipFor(viewingOffersFor)}
+                    startOfferBuilder={viewingOffersStartOfferBuilder}
+                    onOfferScholarship={(pitchType) => dispatch({ type: 'OFFER_SCHOLARSHIP', payload: { recruitId: viewingOffersFor.id, pitchType } })}
                     onPullOffer={() => dispatch({ type: 'PULL_SCHOLARSHIP', payload: { recruitId: viewingOffersFor.id } })}
                     onCoachVisit={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: viewingOffersFor.id } })}
                     onScheduleOfficialVisit={() => setSchedulingVisitFor(viewingOffersFor)}
                     onScout={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: viewingOffersFor.id, cost: 3 } })}
                     onNegativeRecruit={() => setNegativeRecruitingFor(viewingOffersFor)}
-                    onClose={() => setViewingOffersFor(null)} 
-	                />
-	            )}
-	            {offeringScholarshipFor && (
-	                <OfferScholarshipModal
-	                    recruit={offeringScholarshipFor}
-	                    onClose={() => setOfferingScholarshipFor(null)}
-	                    dispatch={dispatch}
+                    onClose={() => { setViewingOffersRecruitId(null); setViewingOffersStartOfferBuilder(false); }} 
 	                />
 	            )}
 	            {showRecruitingAnalytics && (
@@ -8244,13 +8373,14 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                             rowStyle.backgroundColor = '#FFFFAA'; // Yellow for offers
                         }
 
-                        const interestTier = getInterestTier(r.interest);
+                        const displayInterest = normalizeInterest(r.interest);
+                        const interestTier = getInterestTier(displayInterest);
 
                         return (
                             <tr key={r.id} style={rowStyle}>
                                 <td style={styles.td}>{rank ? `#${rank}` : 'UR'}</td>
                                 <td style={styles.td}>
-                                    <button onClick={() => setViewingOffersFor(r)} style={{ ...styles.linkButton, fontWeight: 'bold' }}>
+                                    <button onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={{ ...styles.linkButton, fontWeight: 'bold' }}>
                                         {r.name}
                                     </button>
                                     {(r.hometownCity || r.hometownState || r.highSchoolName) && (
@@ -8262,8 +8392,8 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                             {r.highSchoolName ? ` - ${r.highSchoolName}` : ''}
                                         </div>
                                     )}
-                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>ðŸ’Ž</span>}
-                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>ðŸ’”</span>}
+                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>💎</span>}
+                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>💔</span>}
 	                                </td>
 	                                {showColLocation && (
 	                                    <td style={styles.td} title={`Est. distance: ${estimateRecruitDistanceMilesToTeam(r, state.userTeam!).toLocaleString()} mi`}>
@@ -8278,7 +8408,17 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                {showColNationalRank && (
 	                                    <td style={styles.td}>{r.nationalRank ? `#${r.nationalRank}` : '—'}</td>
 	                                )}
-	                                <td style={styles.td}><StarRating stars={r.stars}/></td>
+	                                <td style={styles.td}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <StarRating stars={r.stars}/>
+                                            {r.relationships?.map(rel => {
+                                                const label = `${rel.type}: ${rel.displayName}${rel.teamName ? ` (${rel.teamName})` : ''}`;
+                                                if (rel.type === 'Twin') return <img key={rel.personId} src={GeminiIcon} title={label} style={{ cursor: 'help', width: '18px', height: '18px' }} />;
+                                                if (rel.type === 'Sibling' || rel.type === 'Cousin') return <img key={rel.personId} src={TreeIcon} title={label} style={{ cursor: 'help', width: '18px', height: '18px' }} />;
+                                                return null;
+                                            })}
+                                        </div>
+                                    </td>
                                 <td style={styles.td}>{r.position}{r.secondaryPosition ? `/${r.secondaryPosition}` : ''}</td>
                                 <td style={{...styles.td, maxWidth: '100px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={r.archetype}>{r.archetype || 'N/A'}</td>
                                 <td style={styles.td}>{formatPlayerHeight(r.height)}</td>
@@ -8287,10 +8427,10 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                 <td style={styles.td}>
                                     <div style={styles.interestCell}>
                                         <div style={styles.interestBarTrack}>
-                                            <div style={{ ...styles.interestBarFill, width: `${r.interest}%`, backgroundColor: interestTier.color }} />
+                                            <div style={{ ...styles.interestBarFill, width: `${displayInterest}%`, backgroundColor: interestTier.color }} />
                                         </div>
                                         <div style={styles.interestBadge}>
-                                            <span>{r.interest}%</span>
+                                            <span>{displayInterest}%</span>
                                             <span>{interestTier.label}</span>
 	                                        </div>
 	                                    </div>
@@ -8318,7 +8458,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                    ) : hasUserDeclined ? (
 	                                        <span style={{color: 'red'}}>Offer Declined</span>
 	                                    ) : totalOffers > 0 ? (
-	                                        <button onClick={() => setViewingOffersFor(r)} style={styles.linkButton}>{totalOffers} Offers</button>
+	                                        <button onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={styles.linkButton}>{totalOffers} Offers</button>
                                     ) : 'Undecided'}
                                 </td>
                                 <td style={styles.td}>
@@ -8338,7 +8478,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                             Pull Offer
                                           </button>
                                         ) : (
-	                                        <button style={styles.smallButton} onClick={() => setOfferingScholarshipFor(r)} disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}>Offer (9)</button>
+	                                        <button style={styles.smallButton} onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(true); }} disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}>Offer (9)</button>
                                         )}
                                         <button style={styles.smallButton} onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}>Coach Visit (5)</button>
                                         <button style={styles.smallButton} onClick={() => setSchedulingVisitFor(r)} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}>Official Visit (8)</button>
@@ -10979,14 +11119,16 @@ const SettingsModal = ({
     );
 };
 
-		const OffersModal = ({ recruit, userTeamName, allTeams, gameInSeason, onOpenRecruitId, contactPointsUsed, contactPointsMax, scoutLevel, actionsDisabled, onContactRecruit, onOfferScholarship, onPullOffer, onCoachVisit, onScheduleOfficialVisit, onScout, onNegativeRecruit, onClose }: { recruit: Recruit; userTeamName: string; allTeams: Team[]; gameInSeason: number; onOpenRecruitId?: (recruitId: string) => void; contactPointsUsed?: number; contactPointsMax?: number; scoutLevel?: number; actionsDisabled?: boolean; onContactRecruit?: () => void; onOfferScholarship?: () => void; onPullOffer?: () => void; onCoachVisit?: () => void; onScheduleOfficialVisit?: () => void; onScout?: () => void; onNegativeRecruit?: () => void; onClose: () => void; }) => {
+		const OffersModal = ({ recruit, userTeamName, allTeams, allRecruits, gameInSeason, onOpenRecruitId, startOfferBuilder, contactPointsUsed, contactPointsMax, scoutLevel, actionsDisabled, onContactRecruit, onOfferScholarship, onPullOffer, onCoachVisit, onScheduleOfficialVisit, onScout, onNegativeRecruit, onClose }: { recruit: Recruit; userTeamName: string; allTeams: Team[]; allRecruits?: Recruit[]; gameInSeason: number; onOpenRecruitId?: (recruitId: string) => void; startOfferBuilder?: boolean; contactPointsUsed?: number; contactPointsMax?: number; scoutLevel?: number; actionsDisabled?: boolean; onContactRecruit?: () => void; onOfferScholarship?: (pitchType: OfferPitchType) => void; onPullOffer?: () => void; onCoachVisit?: () => void; onScheduleOfficialVisit?: () => void; onScout?: () => void; onNegativeRecruit?: () => void; onClose: () => void; }) => {
 		    return (
 		        <RecruitOfferDetailsModal
 		            recruit={recruit}
 		            userTeamName={userTeamName}
+		            allRecruits={allRecruits}
 		            allTeams={allTeams}
 		            gameInSeason={gameInSeason}
 		            onOpenRecruit={onOpenRecruitId}
+		            startOfferBuilder={startOfferBuilder}
 		            contactPointsUsed={contactPointsUsed}
 		            contactPointsMax={contactPointsMax}
 		            scoutLevel={scoutLevel}
@@ -11277,7 +11419,7 @@ const SettingsModal = ({
 		                                </div>
 		                                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px', fontSize: '0.72rem', color: '#374151' }}>
 		                                    <span>
-		                                        Your interest: <strong>{recruit.interest}</strong>/100 <span style={{ color: '#6b7280' }}>(absolute)</span>
+		                                        Your interest: <strong>{normalizeInterest(recruit.interest)}</strong>/100 <span style={{ color: '#6b7280' }}>(absolute)</span>
 		                                    </span>
 		                                    <span>
 		                                        Share: <strong>{userOffer ? userOffer.interestLabel : '<1%'}</strong>
@@ -11368,7 +11510,7 @@ const SettingsModal = ({
 		                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.7rem', color: '#374151', marginBottom: '10px' }}>
 		                                {recruit.archetype ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Archetype</strong> {recruit.archetype}</span> : null}
 		                                {recruit.dealbreaker ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Dealbreaker</strong> {recruit.dealbreaker}</span> : null}
-		                                {recruit.nilPriority ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>NIL</strong> {recruit.nilPriority}</span> : null}
+		                                {recruit.nilPriority ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Priority</strong> {recruit.nilPriority}</span> : null}
 		                                {typeof recruit.resilience === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Resilience</strong> {recruit.resilience}</span> : null}
 		                                {typeof recruit.coachability === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Coachability</strong> {recruit.coachability}</span> : null}
 		                                {typeof recruit.hypeLevel === 'number' ? <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px' }}><strong>Hype</strong> {recruit.hypeLevel}</span> : null}
@@ -11421,7 +11563,7 @@ const SettingsModal = ({
 		                                <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.72rem', color: '#444' }}>
 		                                    {recruit.relationships.map((rel, idx) => (
 		                                        <li key={`${rel.personId}-${idx}`}>
-		                                            {rel.type}: {rel.displayName}{rel.notes ? ` - ${rel.notes}` : ''}
+		                                            {rel.type}: {rel.displayName}{rel.teamName ? ` (${rel.teamName})` : ''}{rel.notes ? ` - ${rel.notes}` : ''}
 		                                        </li>
 		                                    ))}
 		                                </ul>

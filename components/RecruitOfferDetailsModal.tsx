@@ -1,21 +1,23 @@
-﻿import React, { useMemo, useState } from 'react';
-import type { Recruit, Team, TeamColors } from '../types';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { OfferPitchType, Recruit, RecruitNilPriority, Team, TeamColors } from '../types';
 import { SCHOOL_COLORS } from '../constants';
-import { buildRecruitOfferShortlist, calculateRecruitInterestBreakdown, clamp } from '../services/gameService';
+import { buildRecruitOfferShortlist, calculateRecruitInterestBreakdown, clamp, getRecruitOfferShareTemperatureMultiplier } from '../services/gameService';
 
 type Props = {
   recruit: Recruit;
   userTeamName: string;
   allTeams: Team[];
+  allRecruits?: Recruit[];
   gameInSeason: number;
   onClose: () => void;
   onOpenRecruit?: (recruitId: string) => void;
+  startOfferBuilder?: boolean;
   contactPointsUsed?: number;
   contactPointsMax?: number;
   scoutLevel?: number;
   actionsDisabled?: boolean;
   onContactRecruit?: () => void;
-  onOfferScholarship?: () => void;
+  onOfferScholarship?: (pitchType: OfferPitchType) => void;
   onPullOffer?: () => void;
   onCoachVisit?: () => void;
   onScheduleOfficialVisit?: () => void;
@@ -27,6 +29,56 @@ const formatPlayerHeight = (inches: number): string => {
   const feet = Math.floor(inches / 12);
   const remaining = inches % 12;
   return `${feet}'${remaining}"`;
+};
+
+const OFFER_PITCH_OPTIONS: { value: OfferPitchType; label: string; desc: string }[] = [
+  { value: 'Standard', label: 'Standard', desc: 'Balanced pitch.' },
+  { value: 'EarlyPush', label: 'Early Push', desc: 'Press urgency and momentum early.' },
+  { value: 'NILHeavy', label: 'NIL Heavy', desc: 'Lead with NIL opportunities.' },
+  { value: 'PlayingTimePromise', label: 'Playing Time Promise', desc: 'Emphasize role clarity and minutes.' },
+  { value: 'LocalAngle', label: 'Local Angle', desc: 'Family/proximity/hometown focus.' },
+  { value: 'AcademicPitch', label: 'Academic Pitch', desc: 'Sell academics and support systems.' },
+];
+
+const formatRecruitPriority = (priority?: RecruitNilPriority): string => {
+  if (!priority) return '-';
+  if (priority === 'LongTermStability') return 'Long-Term Stability';
+  if (priority === 'DraftStock') return 'Draft Stock';
+  if (priority === 'AcademicSupport') return 'Academic Support';
+  if (priority === 'BrandExposure') return 'Brand Exposure';
+  return priority;
+};
+
+type MotivationKey = 'playingTime' | 'nil' | 'exposure' | 'proximity' | 'development' | 'academics' | 'relationship';
+
+const CATEGORY_THEMES: Record<MotivationKey, { label: string; chipBg: string; chipBorder: string; chipText: string; barFill: string }> = {
+  playingTime: { label: 'Playing Time', chipBg: '#dbeafe', chipBorder: '#2563eb', chipText: '#1e3a8a', barFill: 'linear-gradient(90deg, #60a5fa 0%, #2563eb 100%)' },
+  nil: { label: 'NIL Money', chipBg: '#dcfce7', chipBorder: '#16a34a', chipText: '#14532d', barFill: 'linear-gradient(90deg, #86efac 0%, #16a34a 100%)' },
+  exposure: { label: 'Exposure', chipBg: '#ffedd5', chipBorder: '#f59e0b', chipText: '#92400e', barFill: 'linear-gradient(90deg, #fdba74 0%, #f59e0b 100%)' },
+  proximity: { label: 'Proximity', chipBg: '#ede9fe', chipBorder: '#7c3aed', chipText: '#4c1d95', barFill: 'linear-gradient(90deg, #c4b5fd 0%, #7c3aed 100%)' },
+  development: { label: 'Development', chipBg: '#cffafe', chipBorder: '#06b6d4', chipText: '#164e63', barFill: 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 100%)' },
+  academics: { label: 'Academics', chipBg: '#e0f2fe', chipBorder: '#0ea5e9', chipText: '#0c4a6e', barFill: 'linear-gradient(90deg, #7dd3fc 0%, #0ea5e9 100%)' },
+  relationship: { label: 'Relationships', chipBg: '#ffe4e6', chipBorder: '#e11d48', chipText: '#881337', barFill: 'linear-gradient(90deg, #fda4af 0%, #e11d48 100%)' },
+};
+
+const PITCH_IMPACTS: Record<OfferPitchType, { keys: MotivationKey[]; coef: number }> = {
+  Standard: { keys: [], coef: 0 },
+  EarlyPush: { keys: ['exposure'], coef: 2 },
+  NILHeavy: { keys: ['nil'], coef: 8 },
+  PlayingTimePromise: { keys: ['playingTime'], coef: 7 },
+  LocalAngle: { keys: ['proximity'], coef: 7 },
+  AcademicPitch: { keys: ['academics'], coef: 7 },
+};
+
+const getWhyBadgeTheme = (badge: string): { key: MotivationKey } | null => {
+  const b = (badge || '').toLowerCase();
+  if (b.startsWith('playing time')) return { key: 'playingTime' };
+  if (b.startsWith('nil')) return { key: 'nil' };
+  if (b.startsWith('exposure')) return { key: 'exposure' };
+  if (b.startsWith('proximity')) return { key: 'proximity' };
+  if (b.startsWith('academics')) return { key: 'academics' };
+  if (b.startsWith('relationship')) return { key: 'relationship' };
+  return null;
 };
 
 const SCHOOL_LOGO_MODULES = import.meta.glob('../school logos/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
@@ -162,9 +214,11 @@ export default function RecruitOfferDetailsModal({
   recruit,
   userTeamName,
   allTeams,
+  allRecruits,
   gameInSeason,
   onClose,
   onOpenRecruit,
+  startOfferBuilder,
   contactPointsUsed = 0,
   contactPointsMax = 0,
   scoutLevel = 0,
@@ -180,7 +234,34 @@ export default function RecruitOfferDetailsModal({
   const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
   const [showLongshots, setShowLongshots] = useState(false);
   const temperature = 2.2; // fixed: max separation (Interest Spread 100%)
-  const [sideTab, setSideTab] = useState<'profile' | 'timeline' | 'links'>('profile');
+  const [sideTab, setSideTab] = useState<'profile' | 'timeline' | 'links' | 'package'>('profile');
+  const [showOfferBuilder, setShowOfferBuilder] = useState(false);
+  const [pitchType, setPitchType] = useState<OfferPitchType>('Standard');
+  const [actionFeedback, setActionFeedback] = useState<{ text: string; tone: 'good' | 'bad' | 'neutral' } | null>(null);
+
+  const lastInterestRef = useRef<number>(Math.round(recruit.interest));
+
+  const recruitsById = useMemo(() => new Map((allRecruits || []).map(r => [r.id, r])), [allRecruits]);
+  const packagePartners = useMemo(() => {
+    const links = (recruit.relationships || []).filter(rel => rel.sportLevel === 'HS' && (rel.notes || '').toLowerCase().includes('package deal'));
+    const partners = links
+      .map(link => recruitsById.get(link.personId))
+      .filter(Boolean) as Recruit[];
+    return partners;
+  }, [recruit.relationships, recruitsById]);
+
+  const mutualPackageOfferSchools = useMemo(() => {
+    if (!packagePartners.length) return [];
+    const offerSet = new Set([...(recruit.cpuOffers || []), ...(recruit.userHasOffered ? [userTeamName] : [])]);
+    const mutual = new Set<string>();
+    packagePartners.forEach(p => {
+      const pOffers = new Set([...(p.cpuOffers || []), ...(p.userHasOffered ? [userTeamName] : [])]);
+      offerSet.forEach(s => {
+        if (pOffers.has(s)) mutual.add(s);
+      });
+    });
+    return [...mutual].sort((a, b) => a.localeCompare(b));
+  }, [packagePartners, recruit.cpuOffers, recruit.userHasOffered, userTeamName]);
 
   const powerRankings = useMemo(() => {
     const ranks = new Map<string, number>();
@@ -217,7 +298,7 @@ export default function RecruitOfferDetailsModal({
   const { shortlist, shares } = useMemo(() => {
     return buildRecruitOfferShortlist(
       sortedRawOffers.map(o => ({ name: o.name, score: o.score })),
-      { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature }
+      { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(recruit) }
     );
   }, [sortedRawOffers, recruit.id, gameInSeason, temperature]);
 
@@ -343,6 +424,65 @@ export default function RecruitOfferDetailsModal({
 
   const contactPointsRemaining = Math.max(0, contactPointsMax - contactPointsUsed);
 
+  const motivations: Record<MotivationKey, number> = {
+    proximity: recruit.motivations?.proximity ?? 50,
+    playingTime: recruit.motivations?.playingTime ?? 50,
+    nil: recruit.motivations?.nil ?? 50,
+    exposure: recruit.motivations?.exposure ?? 50,
+    relationship: recruit.motivations?.relationship ?? 50,
+    development: recruit.motivations?.development ?? 50,
+    academics: recruit.motivations?.academics ?? 50,
+  };
+
+  const bestPitchType: OfferPitchType | null = (() => {
+    const candidates = OFFER_PITCH_OPTIONS
+      .map(o => {
+        const i = PITCH_IMPACTS[o.value];
+        if (!i.keys.length) return { value: o.value, score: -1 };
+        const w = i.keys.reduce((sum, k) => sum + motivations[k], 0) / i.keys.length;
+        return { value: o.value, score: w * i.coef };
+      })
+      .sort((a, b) => b.score - a.score);
+    return candidates[0]?.score > 0 ? candidates[0]!.value : null;
+  })();
+
+  const topFocus = (() => {
+    const scores = [
+      { key: 'playingTime', label: 'Playing Time', value: motivations.playingTime },
+      { key: 'nil', label: 'NIL Money', value: motivations.nil },
+      { key: 'exposure', label: 'Exposure', value: motivations.exposure },
+      { key: 'proximity', label: 'Proximity', value: motivations.proximity },
+      { key: 'development', label: 'Development', value: motivations.development },
+      { key: 'academics', label: 'Academics', value: motivations.academics },
+      { key: 'relationship', label: 'Relationships', value: motivations.relationship },
+    ];
+    scores.sort((a, b) => b.value - a.value);
+    return { sorted: scores, top: scores[0] };
+  })();
+
+  useEffect(() => {
+    const next = Math.round(recruit.interest);
+    const prev = lastInterestRef.current;
+    if (next !== prev) {
+      const delta = next - prev;
+      lastInterestRef.current = next;
+      setActionFeedback({
+        text: `Interest ${delta > 0 ? '+' : ''}${delta}`,
+        tone: delta > 0 ? 'good' : 'bad',
+      });
+      const t = window.setTimeout(() => setActionFeedback(null), 2200);
+      return () => window.clearTimeout(t);
+    }
+    lastInterestRef.current = next;
+    return;
+  }, [recruit.interest]);
+
+  useEffect(() => {
+    if (startOfferBuilder && !recruit.userHasOffered) {
+      setShowOfferBuilder(true);
+    }
+  }, [recruit.id, recruit.userHasOffered, startOfferBuilder]);
+
   const actionButton = (disabled: boolean, tone: 'neutral' | 'primary' | 'danger' = 'neutral'): React.CSSProperties => ({
     padding: '8px 8px',
     borderRadius: '6px',
@@ -358,13 +498,13 @@ export default function RecruitOfferDetailsModal({
   });
 
   const motivationItems = [
-    { key: 'playingTime', label: 'Playing Time' },
-    { key: 'nil', label: 'NIL' },
-    { key: 'exposure', label: 'Exposure' },
-    { key: 'proximity', label: 'Proximity' },
-    { key: 'development', label: 'Development' },
-    { key: 'academics', label: 'Academics' },
-    { key: 'relationship', label: 'Relationships' },
+    { key: 'playingTime', label: 'Playing Time', title: '' },
+    { key: 'nil', label: 'NIL Money', title: 'NIL money potential (collective/market support)' },
+    { key: 'exposure', label: 'Exposure', title: 'School prestige/brand visibility' },
+    { key: 'proximity', label: 'Proximity', title: '' },
+    { key: 'development', label: 'Development', title: '' },
+    { key: 'academics', label: 'Academics', title: '' },
+    { key: 'relationship', label: 'Relationships', title: '' },
   ] as const;
 
   const OfferCard = ({ offer }: { offer: OfferView }) => {
@@ -375,6 +515,9 @@ export default function RecruitOfferDetailsModal({
     const fitBadgeText = bestTextColor(teamPrimary);
     const cardBg = rgbaFromHex(teamPrimary, 0.12);
     const cardBorder = rgbaFromHex(teamPrimary, 0.22);
+    const pitchImpact = offer.pitchType ? PITCH_IMPACTS[offer.pitchType] : undefined;
+    const pitchKey = pitchImpact?.keys?.[0];
+    const pitchTheme = pitchKey ? CATEGORY_THEMES[pitchKey] : null;
     return (
       <div
         style={{
@@ -442,15 +585,43 @@ export default function RecruitOfferDetailsModal({
           </div>
           <div>
             <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pitch</div>
-            <div style={{ fontWeight: 700, color: '#111827' }}>{offer.pitchType || '—'}</div>
+            {offer.pitchType ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontWeight: 800, color: '#111827' }}>{offer.pitchType}</span>
+                {pitchTheme ? (
+                  <span style={{ alignSelf: 'flex-start', background: pitchTheme.chipBg, border: `1px solid ${pitchTheme.chipBorder}`, color: pitchTheme.chipText, borderRadius: '999px', padding: '1px 8px', fontSize: '11px', fontWeight: 800 }}>
+                    Affects {pitchTheme.label}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div style={{ fontWeight: 700, color: '#111827' }}>-</div>
+            )}
           </div>
           <div style={{ gridColumn: 'span 2' }}>
             <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Why</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '2px' }}>
               {(offer.whyBadges || []).slice(0, 4).map(b => (
-                <span key={b} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '999px', padding: '2px 8px', fontSize: '11px', color: '#374151', fontWeight: 700 }}>
-                  {b}
-                </span>
+                (() => {
+                  const themed = getWhyBadgeTheme(b);
+                  const theme = themed ? CATEGORY_THEMES[themed.key] : null;
+                  return (
+                    <span
+                      key={b}
+                      style={{
+                        background: theme ? theme.chipBg : '#f9fafb',
+                        border: `1px solid ${theme ? theme.chipBorder : '#e5e7eb'}`,
+                        color: theme ? theme.chipText : '#374151',
+                        borderRadius: '999px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                      }}
+                    >
+                      {b}
+                    </span>
+                  );
+                })()
               ))}
             </div>
           </div>
@@ -476,7 +647,7 @@ export default function RecruitOfferDetailsModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: '12px',
         backgroundColor: 'rgba(15,23,42,0.80)',
         backgroundImage:
           'repeating-linear-gradient(0deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 1px, transparent 1px, transparent 3px)',
@@ -487,8 +658,8 @@ export default function RecruitOfferDetailsModal({
       <div
         style={{
           width: '100%',
-          maxWidth: '1560px',
-          maxHeight: '95vh',
+          maxWidth: 'min(1560px, 98vw)',
+          maxHeight: '96vh',
           background: '#f8fafc',
           backgroundImage:
             'linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px), linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px)',
@@ -532,7 +703,15 @@ export default function RecruitOfferDetailsModal({
                 {typeof recruit.height === 'number' ? <span style={infoPill}>Ht {formatPlayerHeight(recruit.height)}</span> : null}
                 {recruit.weight ? <span style={infoPill}>Wt {recruit.weight} lbs</span> : null}
                 {recruit.wingspan ? <span style={infoPill}>WS {recruit.wingspan}&quot;</span> : null}
-                <span style={{ ...infoPill, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>Interest {recruit.interest}/100</span>
+                {contactPointsMax > 0 ? (
+                  <span
+                    style={{ ...infoPill, background: '#e0f2fe', border: '2px solid #0ea5e9', color: '#0c4a6e' }}
+                    title={`Contact points remaining: ${contactPointsRemaining}/${contactPointsMax} (used: ${contactPointsUsed})`}
+                  >
+                    CP {contactPointsRemaining}/{contactPointsMax}
+                  </span>
+                ) : null}
+                <span style={{ ...infoPill, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>Interest {Math.round(recruit.interest)}/100</span>
                 {recruit.verbalCommitment ? (
                   <span style={{ ...infoPill, background: '#fef9c3', border: '2px solid #fde68a', color: '#854d0e' }}>Verbal: {recruit.verbalCommitment}</span>
                 ) : null}
@@ -564,7 +743,7 @@ export default function RecruitOfferDetailsModal({
                 </span>
 
                 <span style={{ ...headerStatPillBase, background: '#ecfdf5', border: '2px solid #16a34a', color: '#166534' }}>
-                  <span style={headerStatLabel}>Res</span>
+                  <span style={headerStatLabel}>Resilience</span>
                   <span style={headerStatValue}>{recruit.resilience}</span>
                 </span>
 
@@ -588,10 +767,10 @@ export default function RecruitOfferDetailsModal({
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
-                  title={recruit.nilPriority || ''}
+                  title={`Top focus (What Matters): ${topFocus.sorted.slice(0, 3).map(s => `${s.label} ${s.value}`).join(' • ')}${recruit.nilPriority ? ` | Career goal: ${formatRecruitPriority(recruit.nilPriority)}` : ''}`}
                 >
-                  <span style={headerStatLabel}>NIL</span>
-                  <span style={{ ...headerStatValue, overflow: 'hidden', textOverflow: 'ellipsis' }}>{recruit.nilPriority || '-'}</span>
+                  <span style={headerStatLabel}>Top Focus</span>
+                  <span style={{ ...headerStatValue, overflow: 'hidden', textOverflow: 'ellipsis' }}>{topFocus.top ? `${topFocus.top.label} (${topFocus.top.value})` : '-'}</span>
                 </span>
               </div>
             </div>
@@ -673,7 +852,7 @@ export default function RecruitOfferDetailsModal({
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>{shortlistOfferDetails.length} Schools</div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
                 {interestSorted.length ? interestSorted.map(offer => (
                   <OfferCard key={offer.name} offer={offer} />
                 )) : <div style={{ color: '#6b7280' }}>No offers yet.</div>}
@@ -705,11 +884,31 @@ export default function RecruitOfferDetailsModal({
               ) : null}
             </div>
 
-            <div style={{ flex: '1 1 460px', minWidth: '360px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'sticky', top: '12px', alignSelf: 'flex-start' }}>
+            <div style={{ flex: '1 1 460px', minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'sticky', top: '12px', alignSelf: 'flex-start' }}>
               {(onContactRecruit || onOfferScholarship || onPullOffer || onCoachVisit || onScheduleOfficialVisit || onScout || onNegativeRecruit) ? (
                 <div style={{ ...sectionCard, padding: '14px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#111827' }}>Recruiting Actions</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#111827' }}>Recruiting Actions</div>
+                      {actionFeedback ? (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            fontSize: '12px',
+                            fontWeight: 900,
+                            border: '2px solid #0f172a',
+                            boxShadow: '2px 2px 0 #0f172a',
+                            background: actionFeedback.tone === 'good' ? '#86efac' : actionFeedback.tone === 'bad' ? '#fecaca' : '#e2e8f0',
+                            color: '#0f172a',
+                          }}
+                        >
+                          {actionFeedback.text}
+                        </span>
+                      ) : null}
+                    </div>
                     {contactPointsMax > 0 ? (
                       <div style={{ fontSize: '12px', color: '#334155', fontWeight: 900 }}>
                         CP {contactPointsRemaining}/{contactPointsMax}
@@ -720,7 +919,11 @@ export default function RecruitOfferDetailsModal({
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginTop: '10px' }}>
                     <button
                       style={actionButton(actionsLocked || !onContactRecruit || contactPointsRemaining < 1, recruit.userHasOffered ? 'neutral' : 'primary')}
-                      onClick={onContactRecruit}
+                      onClick={() => {
+                        setActionFeedback({ text: recruit.userHasOffered ? 'Maintain contact' : 'Contact made', tone: 'neutral' });
+                        window.setTimeout(() => setActionFeedback(null), 1400);
+                        onContactRecruit?.();
+                      }}
                       disabled={actionsLocked || !onContactRecruit || contactPointsRemaining < 1}
                       title={recruit.userHasOffered ? 'Cheaper, less effective maintain contact' : 'Contact recruit'}
                     >
@@ -730,7 +933,11 @@ export default function RecruitOfferDetailsModal({
                     {recruit.userHasOffered ? (
                       <button
                         style={actionButton(actionsLocked || !onPullOffer, 'danger')}
-                        onClick={onPullOffer}
+                        onClick={() => {
+                          setActionFeedback({ text: 'Offer pulled', tone: 'neutral' });
+                          window.setTimeout(() => setActionFeedback(null), 1800);
+                          onPullOffer?.();
+                        }}
                         disabled={actionsLocked || !onPullOffer}
                       >
                         Pull Offer
@@ -738,16 +945,20 @@ export default function RecruitOfferDetailsModal({
                     ) : (
                       <button
                         style={actionButton(actionsLocked || !onOfferScholarship || contactPointsRemaining < 9, 'primary')}
-                        onClick={onOfferScholarship}
+                        onClick={() => setShowOfferBuilder(v => !v)}
                         disabled={actionsLocked || !onOfferScholarship || contactPointsRemaining < 9}
                       >
-                        Offer (9)
+                        {showOfferBuilder ? 'Close Offer' : 'Offer (9)'}
                       </button>
                     )}
 
                     <button
                       style={actionButton(actionsLocked || !onCoachVisit || contactPointsRemaining < 5, 'neutral')}
-                      onClick={onCoachVisit}
+                      onClick={() => {
+                        setActionFeedback({ text: 'Coach visit scheduled', tone: 'neutral' });
+                        window.setTimeout(() => setActionFeedback(null), 1800);
+                        onCoachVisit?.();
+                      }}
                       disabled={actionsLocked || !onCoachVisit || contactPointsRemaining < 5}
                     >
                       Coach Visit (5)
@@ -755,7 +966,11 @@ export default function RecruitOfferDetailsModal({
 
                     <button
                       style={actionButton(actionsLocked || !onScheduleOfficialVisit || contactPointsRemaining < 8, 'neutral')}
-                      onClick={onScheduleOfficialVisit}
+                      onClick={() => {
+                        setActionFeedback({ text: 'Official visit scheduled', tone: 'neutral' });
+                        window.setTimeout(() => setActionFeedback(null), 1800);
+                        onScheduleOfficialVisit?.();
+                      }}
                       disabled={actionsLocked || !onScheduleOfficialVisit || contactPointsRemaining < 8}
                     >
                       Official Visit (8)
@@ -763,7 +978,11 @@ export default function RecruitOfferDetailsModal({
 
                     <button
                       style={actionButton(actionsLocked || !onScout || scoutLevel >= 3 || contactPointsRemaining < 3, 'neutral')}
-                      onClick={onScout}
+                      onClick={() => {
+                        setActionFeedback({ text: 'Scouting...', tone: 'neutral' });
+                        window.setTimeout(() => setActionFeedback(null), 1800);
+                        onScout?.();
+                      }}
                       disabled={actionsLocked || !onScout || scoutLevel >= 3 || contactPointsRemaining < 3}
                     >
                       Scout ({scoutLevel}/3) (3)
@@ -771,12 +990,105 @@ export default function RecruitOfferDetailsModal({
 
                     <button
                       style={actionButton(actionsLocked || !onNegativeRecruit || contactPointsRemaining < 1, 'neutral')}
-                      onClick={onNegativeRecruit}
+                      onClick={() => {
+                        setActionFeedback({ text: 'Negative recruiting...', tone: 'neutral' });
+                        window.setTimeout(() => setActionFeedback(null), 1800);
+                        onNegativeRecruit?.();
+                      }}
                       disabled={actionsLocked || !onNegativeRecruit || contactPointsRemaining < 1}
                     >
                       Negative (1)
                     </button>
                   </div>
+
+                  {!recruit.userHasOffered && showOfferBuilder ? (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '2px solid rgba(15,23,42,0.12)' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827' }}>Offer Scholarship</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                        Choose a pitch type. This can change how the recruit evaluates your offer.
+                      </div>
+
+                      <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                        {OFFER_PITCH_OPTIONS.map(opt => {
+                          const impact = PITCH_IMPACTS[opt.value];
+                          const impactedKeys = impact.keys;
+                          const primaryKey = impactedKeys[0];
+                          const primaryTheme = primaryKey ? CATEGORY_THEMES[primaryKey] : null;
+                          const isBest = opt.value === bestPitchType && impact.keys.length > 0;
+                          const fitScore = impact.keys.length
+                            ? Math.round((impact.keys.reduce((sum, k) => sum + motivations[k], 0) / impact.keys.length) * impact.coef)
+                            : 0;
+                          return (
+                          <label
+                            key={opt.value}
+                            style={{
+                              display: 'flex',
+                              gap: '10px',
+                              alignItems: 'flex-start',
+                              padding: '10px 10px',
+                              borderRadius: '10px',
+                              border: pitchType === opt.value ? '2px solid #0f172a' : '2px solid rgba(15,23,42,0.25)',
+                              background: pitchType === opt.value ? (primaryTheme ? primaryTheme.chipBg : '#e0f2fe') : '#f8fafc',
+                              boxShadow: pitchType === opt.value ? '2px 2px 0 #0f172a' : undefined,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              value={opt.value}
+                              checked={pitchType === opt.value}
+                              onChange={() => setPitchType(opt.value)}
+                              style={{ marginTop: '3px' }}
+                            />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <div style={{ fontWeight: 900, color: '#0f172a', fontSize: '13px' }}>{opt.label}</div>
+                                {primaryTheme ? (
+                                  <span style={{ background: primaryTheme.chipBg, border: `1px solid ${primaryTheme.chipBorder}`, color: primaryTheme.chipText, borderRadius: '999px', padding: '1px 8px', fontSize: '11px', fontWeight: 900 }}>
+                                    Affects {primaryTheme.label} ({primaryKey ? motivations[primaryKey] : 0})
+                                  </span>
+                                ) : (
+                                  <span style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', borderRadius: '999px', padding: '1px 8px', fontSize: '11px', fontWeight: 900 }}>
+                                    Balanced
+                                  </span>
+                                )}
+                                {isBest ? (
+                                  <span style={{ background: '#86efac', border: '1px solid #16a34a', color: '#14532d', borderRadius: '999px', padding: '1px 8px', fontSize: '11px', fontWeight: 900 }}>
+                                    Best fit
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{opt.desc}</div>
+                              {impact.keys.length ? (
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: '#475569', fontWeight: 800 }}>
+                                  Fit score: {fitScore}
+                                </div>
+                              ) : null}
+                            </div>
+                          </label>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                        <button style={actionButton(false, 'neutral')} onClick={() => setShowOfferBuilder(false)}>
+                          Cancel
+                        </button>
+                        <button
+                          style={actionButton(actionsLocked || !onOfferScholarship || contactPointsRemaining < 9, 'primary')}
+                          disabled={actionsLocked || !onOfferScholarship || contactPointsRemaining < 9}
+                          onClick={() => {
+                            onOfferScholarship?.(pitchType);
+                            setShowOfferBuilder(false);
+                            setActionFeedback({ text: 'Offer sent', tone: 'neutral' });
+                            window.setTimeout(() => setActionFeedback(null), 1800);
+                          }}
+                        >
+                          Make Offer
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -787,6 +1099,9 @@ export default function RecruitOfferDetailsModal({
                     <button style={tabButton(sideTab === 'profile')} onClick={() => setSideTab('profile')}>Profile</button>
                     <button style={tabButton(sideTab === 'timeline')} onClick={() => setSideTab('timeline')}>Timeline</button>
                     <button style={tabButton(sideTab === 'links')} onClick={() => setSideTab('links')}>Links</button>
+                    {mutualPackageOfferSchools.length ? (
+                      <button style={tabButton(sideTab === 'package')} onClick={() => setSideTab('package')}>Package</button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -803,11 +1118,11 @@ export default function RecruitOfferDetailsModal({
                           return (
                             <div key={item.key}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#374151', marginBottom: '4px' }}>
-                                <span style={{ fontWeight: 800 }}>{item.label}</span>
+                                <span style={{ fontWeight: 800 }} title={item.title}>{item.label}</span>
                                 <span style={{ color: '#6b7280', fontWeight: 900 }}>{value}</span>
                               </div>
                               <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
-                                <div style={{ width: `${clamp(value, 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa 0%, #2563eb 100%)' }} />
+                                <div style={{ width: `${clamp(value, 0, 100)}%`, height: '100%', background: CATEGORY_THEMES[item.key].barFill }} />
                               </div>
                             </div>
                           );
@@ -825,7 +1140,18 @@ export default function RecruitOfferDetailsModal({
                         <ul style={{ margin: 0, paddingLeft: '18px' }}>
                           {[...(recruit.offerHistory || [])].slice(-12).reverse().map((e, idx) => (
                             <li key={`${e.teamName}-${e.week}-${idx}`} style={{ opacity: e.revoked ? 0.7 : 1 }}>
-                              Week {e.week}: {e.teamName} - {e.pitchType}{e.revoked ? ' (revoked)' : ''}
+                              {e.date ? `${e.date}: ` : `Week ${e.week}: `}{e.teamName} - {e.pitchType}{e.revoked ? ' (revoked)' : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : offerNames.length ? (
+                      <>
+                        <div style={{ fontWeight: 900, color: '#111827', marginBottom: '6px' }}>Current Offers</div>
+                        <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                          {sortedRawOffers.slice(0, 12).map((o, idx) => (
+                            <li key={`${o.name}-${idx}`}>
+                              {o.name}{o.pitchType ? ` - ${o.pitchType}` : ''}
                             </li>
                           ))}
                         </ul>
@@ -878,6 +1204,43 @@ export default function RecruitOfferDetailsModal({
                       </div>
                     ) : (
                       <div style={{ color: '#6b7280', fontSize: '13px' }}>No known relationships.</div>
+                    )}
+                  </div>
+                )}
+
+                {sideTab === 'package' && (
+                  <div style={{ marginTop: '12px' }}>
+                    {mutualPackageOfferSchools.length ? (
+                      <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '10px 12px', color: '#1f2937' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827', marginBottom: '6px' }}>Mutual Package Offers</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                          Schools that offered both {recruit.name} and {packagePartners[0]?.name}{packagePartners.length > 1 ? ' (and others)' : ''}.
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#1f2937', columns: mutualPackageOfferSchools.length > 8 ? 2 : 1 }}>
+                          {mutualPackageOfferSchools.map(name => (
+                            <li key={name}>{name}</li>
+                          ))}
+                        </ul>
+                        {packagePartners.length && typeof onOpenRecruit === 'function' ? (
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+                            Open partner:{' '}
+                            {packagePartners.slice(0, 3).map((p, idx) => (
+                              <span key={p.id}>
+                                <a
+                                  href="#"
+                                  onClick={(e) => { e.preventDefault(); onOpenRecruit(p.id); }}
+                                  style={{ color: '#0f172a', textDecoration: 'none', cursor: 'pointer', fontWeight: 800 }}
+                                >
+                                  {p.name}
+                                </a>
+                                {idx < Math.min(3, packagePartners.length) - 1 ? ', ' : ''}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ color: '#6b7280', fontSize: '13px' }}>No mutual package offers yet.</div>
                     )}
                   </div>
                 )}
