@@ -232,11 +232,17 @@ export default function RecruitOfferDetailsModal({
   onNegativeRecruit,
 }: Props) {
   const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
+  const userTeam = useMemo(() => teamsByName.get(userTeamName) || null, [teamsByName, userTeamName]);
+  const userPrestige = (userTeam?.recruitingPrestige ?? userTeam?.prestige ?? 50) as number;
+  const eliteFitFail =
+    userPrestige >= 94 &&
+    ((recruit.preferredProgramAttributes?.academics ?? 50) < 40 || recruit.personalityTrait === 'Family Feud');
   const [showLongshots, setShowLongshots] = useState(false);
   const temperature = 2.2; // fixed: max separation (Interest Spread 100%)
   const [sideTab, setSideTab] = useState<'profile' | 'timeline' | 'links' | 'package'>('profile');
   const [showOfferBuilder, setShowOfferBuilder] = useState(false);
   const [pitchType, setPitchType] = useState<OfferPitchType>('Standard');
+  const [hoverPitchType, setHoverPitchType] = useState<OfferPitchType | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ text: string; tone: 'good' | 'bad' | 'neutral' } | null>(null);
 
   const lastInterestRef = useRef<number>(Math.round(recruit.interest));
@@ -348,7 +354,10 @@ export default function RecruitOfferDetailsModal({
   const leaderDelta = topLeader && topRunnerUp ? Math.max(0, topLeader.interestPct - topRunnerUp.interestPct) : null;
 
   const topRecruit = (recruit.nationalRank != null && recruit.nationalRank <= 50) || recruit.stars >= 4;
-  const actionsLocked = actionsDisabled || (!!recruit.verbalCommitment && recruit.verbalCommitment !== userTeamName) || recruit.declinedOffers?.includes(userTeamName);
+  const actionsLocked =
+    actionsDisabled ||
+    Boolean(recruit.isSigned || recruit.recruitmentStage === 'Signed') ||
+    Boolean(recruit.declinedOffers?.includes(userTeamName));
 
   const sectionCard: React.CSSProperties = {
     background: '#f8fafc',
@@ -444,6 +453,14 @@ export default function RecruitOfferDetailsModal({
       })
       .sort((a, b) => b.score - a.score);
     return candidates[0]?.score > 0 ? candidates[0]!.value : null;
+  })();
+
+  const projectedMomentumPreview = (() => {
+    const preview = hoverPitchType ?? pitchType;
+    const impact = PITCH_IMPACTS[preview];
+    if (!impact.keys.length) return 0;
+    const avg = impact.keys.reduce((sum, k) => sum + motivations[k], 0) / impact.keys.length;
+    return clamp(Math.round(1 + (avg / 100) * 5 + impact.coef / 8), 0, 10);
   })();
 
   const topFocus = (() => {
@@ -713,7 +730,9 @@ export default function RecruitOfferDetailsModal({
                 ) : null}
                 <span style={{ ...infoPill, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>Interest {Math.round(recruit.interest)}/100</span>
                 {recruit.verbalCommitment ? (
-                  <span style={{ ...infoPill, background: '#fef9c3', border: '2px solid #fde68a', color: '#854d0e' }}>Verbal: {recruit.verbalCommitment}</span>
+                  <span style={{ ...infoPill, background: recruit.isSigned ? '#bbf7d0' : '#fef9c3', border: `2px solid ${recruit.isSigned ? '#16a34a' : '#fde68a'}`, color: recruit.isSigned ? '#14532d' : '#854d0e' }}>
+                    {recruit.isSigned ? 'SIGNED' : `Verbal: ${recruit.verbalLevel}`}: {recruit.verbalCommitment}
+                  </span>
                 ) : null}
               </div>
 
@@ -810,6 +829,78 @@ export default function RecruitOfferDetailsModal({
         <div style={{ flex: '1 1 auto', overflowY: 'auto', background: '#f3f4f6', padding: '18px' }}>
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 680px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ ...sectionCard, padding: '14px 14px' }}>
+                {eliteFitFail ? (
+                  <div
+                    style={{
+                      marginBottom: '12px',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '2px solid #b91c1c',
+                      background: '#fee2e2',
+                      boxShadow: '2px 2px 0 #0f172a',
+                      color: '#7f1d1d',
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, marginBottom: '4px' }}>DUKE ALERT: ELITE FIT FAILED</div>
+                    <div style={{ opacity: 0.95 }}>
+                      Academics preference too low or character risk flagged. High-prestige programs won&apos;t sign this recruit.
+                    </div>
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+                  <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#374151', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 900 }}>Lock Strength</span>
+                      <span style={{ color: '#6b7280', fontWeight: 900 }}>{Math.round((recruit.lockStrength || 0) * 100)}%</span>
+                    </div>
+                    <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
+                      <div style={{ width: `${clamp(Math.round((recruit.lockStrength || 0) * 100), 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa 0%, #2563eb 100%)' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                      {recruit.verbalCommitment ? (
+                        <span style={{ ...infoPill, background: '#fef9c3', border: '2px solid #fde68a', color: '#854d0e' }}>
+                          Verbal: {recruit.verbalLevel} @ {recruit.verbalCommitment}
+                        </span>
+                      ) : (
+                        <span style={{ ...infoPill, background: '#f3f4f6', border: '2px solid #6b7280', color: '#374151' }}>
+                          Verbal: NONE
+                        </span>
+                      )}
+                      {recruit.hometownAnchorProgram ? <span style={infoPill}>Anchor: {recruit.hometownAnchorProgram}</span> : null}
+                    </div>
+                  </div>
+
+                  <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      {[
+                        { label: 'Archetype', value: recruit.archetype || '-' },
+                        { label: 'Dealbreaker', value: recruit.dealbreaker || '-' },
+                        { label: 'Personality', value: recruit.personalityTrait || '-' },
+                        { label: 'Academics', value: (recruit.preferredProgramAttributes?.academics ?? '-') as any },
+                      ].map(item => (
+                        <div
+                          key={item.label}
+                          style={{
+                            padding: '10px 10px',
+                            borderRadius: '10px',
+                            border: '2px solid #0f172a',
+                            background: '#ffffff',
+                            boxShadow: '2px 2px 0 #0f172a',
+                          }}
+                        >
+                          <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 900 }}>
+                            {item.label}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#111827', fontWeight: 900, marginTop: '4px' }}>{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {recruit.lastRecruitingNews ? (
                 <div style={{ ...sectionCard, padding: '12px 14px' }}>
                   <div style={{ fontSize: '13px', color: '#111827' }}>{recruit.lastRecruitingNews}</div>
@@ -820,11 +911,11 @@ export default function RecruitOfferDetailsModal({
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', fontSize: '13px' }}>
                   <div>
                     <span style={{ fontWeight: 900, color: '#111827' }}>Leader:</span>{' '}
-                    <span style={{ color: '#374151' }}>{topLeader ? `${topLeader.name} (${topLeader.interestLabel})` : '—'}</span>
+                    <span style={{ color: '#374151' }}>{topLeader ? `${topLeader.name} (${topLeader.interestLabel})` : '-'}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <span style={{ fontWeight: 900, color: '#111827' }}>Runner-up:</span>{' '}
-                    <span style={{ color: '#374151' }}>{topRunnerUp ? `${topRunnerUp.name} (${topRunnerUp.interestLabel})` : '—'}</span>
+                    <span style={{ color: '#374151' }}>{topRunnerUp ? `${topRunnerUp.name} (${topRunnerUp.interestLabel})` : '-'}</span>
                     {leaderDelta != null ? <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>+{leaderDelta.toFixed(1)}%</span> : null}
                   </div>
                 </div>
@@ -1061,6 +1152,9 @@ export default function RecruitOfferDetailsModal({
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
                         Choose a pitch type. This can change how the recruit evaluates your offer.
                       </div>
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#374151', fontWeight: 900 }}>
+                        Projected Momentum Gain: {projectedMomentumPreview > 0 ? `+${projectedMomentumPreview}` : '--'}
+                      </div>
 
                       <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
                         {OFFER_PITCH_OPTIONS.map(opt => {
@@ -1075,6 +1169,8 @@ export default function RecruitOfferDetailsModal({
                           return (
                           <label
                             key={opt.value}
+                            onMouseEnter={() => setHoverPitchType(opt.value)}
+                            onMouseLeave={() => setHoverPitchType(null)}
                             style={{
                               display: 'flex',
                               gap: '10px',

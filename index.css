@@ -38,3 +38,30 @@ button {
     padding: 8px;
   }
 }
+
+/* 16-bit utilities (opt-in) */
+.pixel-border {
+  box-shadow: inset -4px -4px 0px #000, inset 4px 4px 0px #fff;
+}
+
+.pixel-panel {
+  background: #f8fafc;
+  border: 4px solid #0f172a;
+  box-shadow: 10px 10px 0 #0f172a;
+}
+
+.pixel-warning {
+  background: #fee2e2;
+  border: 2px solid #b91c1c;
+  box-shadow: 2px 2px 0 #0f172a;
+  color: #7f1d1d;
+}
+
+.pixel-banner {
+  background: linear-gradient(90deg, #fbbf24 0%, #1d4ed8 100%);
+  color: #0f172a;
+  border: 3px solid #0f172a;
+  box-shadow: 4px 4px 0 #0f172a;
+  padding: 6px 10px;
+  font-size: 0.7rem;
+}

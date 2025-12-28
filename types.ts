@@ -329,6 +329,15 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   isGem?: boolean;
   isBust?: boolean;
 
+  // Duke Model / Poachable Verbals
+  isSigned: boolean;
+  verbalLevel: 'NONE' | 'SOFT' | 'HARD';
+  lockStrength: number; // 0..1
+  verbalDay?: number;
+  activeOfferCount: number;
+  hometownAnchorProgram?: string;
+  recruitingEvents?: { type: 'Flip' | 'Decommit' | 'Sign'; week: number; from?: string; to?: string }[];
+
   // New Fields for Enhanced Recruiting
   hometownCity?: string;
   hometownState?: string;
@@ -1773,6 +1782,12 @@ export interface GameState {
       };
       tournamentChampion?: string | null;
       tournamentRunnerUp?: string | null;
+      signedRecruits?: Recruit[];
+      verbalCommits?: Recruit[];
+      signedPct?: number; // signed / (signed + verbal)
+      verbalPct?: number; // verbal / (signed + verbal)
+      decommitments?: number;
+      flips?: number;
       coachReputation: number;
       coachReputationChange: number;
       cpi?: {

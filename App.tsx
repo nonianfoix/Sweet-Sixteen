@@ -3043,7 +3043,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 regularSeasonRecord: `${regularSeasonWins}-${regularSeasonLosses}`,
                 postseasonRecord: `${tournamentWins}-${tournamentLosses}`,
                 tournamentResult: tournamentResult,
-                signings: state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name),
+                signings: state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && (r.isSigned || r.recruitmentStage === 'Signed')),
+                signedRecruits: state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && (r.isSigned || r.recruitmentStage === 'Signed')),
+                verbalCommits: state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && !(r.isSigned || r.recruitmentStage === 'Signed')),
+                signedPct: (() => {
+                    const signed = state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && (r.isSigned || r.recruitmentStage === 'Signed')).length;
+                    const verbal = state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && !(r.isSigned || r.recruitmentStage === 'Signed')).length;
+                    const total = signed + verbal;
+                    return total > 0 ? signed / total : 0;
+                })(),
+                verbalPct: (() => {
+                    const signed = state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && (r.isSigned || r.recruitmentStage === 'Signed')).length;
+                    const verbal = state.recruits.filter(r => r.verbalCommitment === userTeamFromAllTeams.name && !(r.isSigned || r.recruitmentStage === 'Signed')).length;
+                    const total = signed + verbal;
+                    return total > 0 ? verbal / total : 0;
+                })(),
+                decommitments: state.recruits.reduce((sum, r) => sum + ((r.recruitingEvents || []).filter(e => e.type === 'Decommit').length), 0),
+                flips: state.recruits.reduce((sum, r) => sum + ((r.recruitingEvents || []).filter(e => e.type === 'Flip').length), 0),
                 drafted: userDraftedPlayers,
                 formerDrafted: formerDraftedPlayers,
                 prestigeChange: prestigeChanges.get(userTeamFromAllTeams.name) || 0,
@@ -3336,6 +3352,32 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	    }
 	    case 'OFFER_SCHOLARSHIP': {
 	        if (!state.userTeam) return state;
+	        const offeredRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
+            const userPrestige = state.userTeam.recruitingPrestige ?? state.userTeam.prestige ?? 50;
+            if (userPrestige >= 94) {
+                const recruitAcademicPreference = offeredRecruit?.preferredProgramAttributes?.academics ?? 50;
+                if (recruitAcademicPreference < 40 || offeredRecruit?.personalityTrait === 'Family Feud') {
+                    return { ...state, toastMessage: 'Elite Fit required: recruit rejected your offer (academics/character).' };
+                }
+            }
+
+            // Offer pruning (user team): enforce max active offers to prevent 40+ spam.
+            const maxActiveOffers = userPrestige >= 94 ? 18 : userPrestige >= 80 ? 25 : 40;
+            const activeOffers = state.recruits.filter(r => r.userHasOffered && !(r.isSigned || r.recruitmentStage === 'Signed')).length;
+            const rescindCandidate = (() => {
+                if (activeOffers < maxActiveOffers) return null;
+                const teamName = state.userTeam!.name;
+                const candidates = state.recruits
+                    .filter(r => r.userHasOffered && r.id !== action.payload.recruitId)
+                    .filter(r => !(r.isSigned || r.recruitmentStage === 'Signed'))
+                    .map(r => ({
+                        r,
+                        momentum: r.teamMomentum?.[teamName] ?? 0,
+                        interest: r.interest ?? 0,
+                    }))
+                    .sort((a, b) => (a.momentum - b.momentum) || (a.interest - b.interest));
+                return candidates[0]?.r ?? null;
+            })();
 	        const offerCost = 9;
         if (state.contactsMadeThisWeek + offerCost > getContactPoints(state.userTeam)) {
             return {
@@ -3349,7 +3391,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
              return { ...state, toastMessage: 'Insufficient funds to make offer.' };
         }
 
-        const updatedUserTeam = {
+	        const updatedUserTeam = {
             ...state.userTeam,
             budget: { ...state.userTeam.budget!, cash: state.userTeam.budget!.cash - financialCost },
             finances: {
@@ -3373,7 +3415,6 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
 
 	        const pitchType = action.payload.pitchType ?? 'Standard';
-	        const offeredRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
 	        const packageDealLinkedIds = new Set(
 	            (offeredRecruit?.relationships || [])
 	                .filter(rel => rel.sportLevel === 'HS' && (rel.notes || '').toLowerCase().includes('package deal'))
@@ -3386,13 +3427,24 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	          allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
 	          recruits: state.recruits.map(r => {
 	            const teamName = state.userTeam!.name;
+                if (rescindCandidate && r.id === rescindCandidate.id) {
+                    const offerHistory = [...(r.offerHistory || [])];
+                    for (let i = offerHistory.length - 1; i >= 0; i--) {
+                        const entry = offerHistory[i];
+                        if (entry.teamName === teamName && !entry.revoked) {
+                            offerHistory[i] = { ...entry, revoked: true };
+                            break;
+                        }
+                    }
+                    return { ...r, userHasOffered: false, offerHistory };
+                }
 	            if (r.id === action.payload.recruitId) {
 	                const teamMomentum = { ...(r.teamMomentum || {}) };
 	                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 5, -20, 20);
 	                const offerHistory = [...(r.offerHistory || [])];
 	                offerHistory.push({ teamName, week: state.week, date: state.currentDate, pitchType, source: 'User' });
 	                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
-	                return { ...r, userHasOffered: true, interest: normalizeInterest(r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week };
+	                return { ...r, userHasOffered: true, interest: normalizeInterest(r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week, activeOfferCount: (r.cpuOffers?.length || 0) + 1 };
 	            }
 
 	            if (packageDealLinkedIds.has(r.id) && !r.verbalCommitment && !r.declinedOffers?.includes(teamName)) {
@@ -3406,7 +3458,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	            return r;
 	          }),
 	          contactsMadeThisWeek: state.contactsMadeThisWeek + offerCost,
-	          toastMessage: `Scholarship offered (${pitchType}). (-$${financialCost})`,
+	          toastMessage: rescindCandidate
+                ? `Offer cap reached: pulled ${rescindCandidate.name}, then offered (${pitchType}). (-$${financialCost})`
+                : `Scholarship offered (${pitchType}). (-$${financialCost})`,
 	        };
 	    }
 	    case 'PULL_SCHOLARSHIP': {
@@ -4105,7 +4159,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         const recapData = {
             record: lastSeasonRecord ? `${lastSeasonRecord.wins}-${lastSeasonRecord.losses}` : 'N/A',
             tournamentResult: lastSeasonRecord?.tournamentResult || 'N/A',
-            signings: state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name),
+            signings: state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && (r.isSigned || r.recruitmentStage === 'Signed')),
+            signedRecruits: state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && (r.isSigned || r.recruitmentStage === 'Signed')),
+            verbalCommits: state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && !(r.isSigned || r.recruitmentStage === 'Signed')),
+            signedPct: (() => {
+                const signed = state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && (r.isSigned || r.recruitmentStage === 'Signed')).length;
+                const verbal = state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && !(r.isSigned || r.recruitmentStage === 'Signed')).length;
+                const total = signed + verbal;
+                return total > 0 ? signed / total : 0;
+            })(),
+            verbalPct: (() => {
+                const signed = state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && (r.isSigned || r.recruitmentStage === 'Signed')).length;
+                const verbal = state.recruits.filter(r => r.verbalCommitment === state.userTeam!.name && !(r.isSigned || r.recruitmentStage === 'Signed')).length;
+                const total = signed + verbal;
+                return total > 0 ? verbal / total : 0;
+            })(),
+            decommitments: state.recruits.reduce((sum, r) => sum + ((r.recruitingEvents || []).filter(e => e.type === 'Decommit').length), 0),
+            flips: state.recruits.reduce((sum, r) => sum + ((r.recruitingEvents || []).filter(e => e.type === 'Flip').length), 0),
             drafted: state.draftResults.filter(d => d.originalTeam === state.userTeam!.name),
             prestigeChange: prestigeChanges.get(state.userTeam.name) || 0,
             coachReputation: predictedReputation,
@@ -12298,6 +12368,12 @@ const SeasonRecapModalV2 = ({ recapData, onClose }: { recapData: GameState['seas
         sponsor,
         tournamentChampion,
         tournamentRunnerUp,
+        signedRecruits,
+        verbalCommits,
+        signedPct,
+        verbalPct,
+        decommitments,
+        flips,
         cpi,
     } = recapData;
 
@@ -12457,7 +12533,10 @@ const SeasonRecapModalV2 = ({ recapData, onClose }: { recapData: GameState['seas
                             <div style={box}>
                                 <h4 style={sectionTitle}>Quick Counts</h4>
                                 <div style={{ fontSize: '0.65rem', lineHeight: 1.4 }}>
-                                    <div><strong>New Signings:</strong> {signings?.length || 0}</div>
+                                    <div><strong>Signed:</strong> {(signedRecruits?.length ?? signings?.length) || 0} ({formatPct(signedPct)})</div>
+                                    <div><strong>Verbals:</strong> {verbalCommits?.length || 0} ({formatPct(verbalPct)})</div>
+                                    <div><strong>Decommitments:</strong> {decommitments ?? 0}</div>
+                                    <div><strong>Flips:</strong> {flips ?? 0}</div>
                                     <div><strong>Drafted Players:</strong> {drafted?.length || 0}</div>
                                     <div><strong>Former Alumni Drafted:</strong> {formerDrafted?.length || 0}</div>
                                     <div><strong>Home Games Tracked:</strong> {attendance?.games || 0}</div>
@@ -12468,10 +12547,30 @@ const SeasonRecapModalV2 = ({ recapData, onClose }: { recapData: GameState['seas
 
                     {tab === 'recruiting' ? (
                         <div>
-                            <h4 style={sectionTitle}>New Signings</h4>
-                            {signings?.length ? (
+                            <h4 style={sectionTitle}>Recruiting Summary</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                                <div style={box}>
+                                    <div style={label}>Signed</div>
+                                    <div style={valueStyle}>{(signedRecruits?.length ?? signings?.length) || 0} ({formatPct(signedPct)})</div>
+                                </div>
+                                <div style={box}>
+                                    <div style={label}>Verbals</div>
+                                    <div style={valueStyle}>{verbalCommits?.length || 0} ({formatPct(verbalPct)})</div>
+                                </div>
+                                <div style={box}>
+                                    <div style={label}>Decommitments</div>
+                                    <div style={valueStyle}>{decommitments ?? 0}</div>
+                                </div>
+                                <div style={box}>
+                                    <div style={label}>Flips</div>
+                                    <div style={valueStyle}>{flips ?? 0}</div>
+                                </div>
+                            </div>
+
+                            <h4 style={sectionTitle}>Signed Recruits</h4>
+                            {(signedRecruits?.length ?? signings?.length) ? (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
-                                    {[...signings]
+                                    {[...(signedRecruits || signings || [])]
                                         .sort((a, b) => (b.stars - a.stars) || (b.overall - a.overall))
                                         .map(r => (
                                             <div key={r.id} style={box}>
@@ -12488,6 +12587,27 @@ const SeasonRecapModalV2 = ({ recapData, onClose }: { recapData: GameState['seas
                             ) : (
                                 <div style={{ fontSize: '0.65rem' }}>None</div>
                             )}
+
+                            {verbalCommits?.length ? (
+                                <>
+                                    <h4 style={{ ...sectionTitle, marginTop: '12px' }}>Verbals (Poachable)</h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                                        {[...verbalCommits]
+                                            .sort((a, b) => (b.stars - a.stars) || (b.overall - a.overall))
+                                            .map(r => (
+                                                <div key={r.id} style={box}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                                        <div style={{ fontSize: '0.65rem' }}><strong>{r.name}</strong></div>
+                                                        <div style={{ fontSize: '0.55rem', opacity: 0.85 }}>{r.stars}?</div>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.55rem', marginTop: '6px', opacity: 0.9 }}>
+                                                        {r.position} ú OVR {r.overall} ú POT {r.potential}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </>
+                            ) : null}
                         </div>
                     ) : null}
 
