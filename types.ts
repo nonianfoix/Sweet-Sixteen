@@ -1740,13 +1740,39 @@ export interface GameState {
   economyTelemetry: EconomyTelemetry;
   toastMessage: string | null;
   seasonRecapData: {
+      season?: number;
+      seasonYear?: number;
+      teamName?: string;
+      conference?: string;
+      nationalRank?: number;
       record: string;
+      regularSeasonRecord?: string;
+      postseasonRecord?: string;
       tournamentResult: string;
       signings: Recruit[];
       drafted: DraftPick[];
+      formerDrafted?: DraftPick[];
       prestigeChange: number;
+      prestige?: number;
       totalRevenue: number;
       projectedRevenue: number;
+      operationalExpenses?: number;
+      netIncome?: number;
+      cashOnHand?: number;
+      revenueBreakdown?: Partial<Finances>;
+      attendance?: {
+          games: number;
+          avgAttendance: number;
+          avgCapacity?: number;
+          avgFillRate?: number;
+          avgGameRevenue: number;
+      };
+      sponsor?: {
+          name: string;
+          tier?: SponsorTier;
+      };
+      tournamentChampion?: string | null;
+      tournamentRunnerUp?: string | null;
       coachReputation: number;
       coachReputationChange: number;
       cpi?: {
