@@ -1324,6 +1324,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 },
             };
         })();
+
+        const normalizedTournament =
+            loadedState.status === GameStatus.TOURNAMENT && !loadedState.tournament
+                ? createTournament(normalizedTeams)
+                : (loadedState.tournament ?? null);
         return {
             ...loadedState,
             season: loadedSeason,
@@ -1358,9 +1363,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             recruitingCadence: 'daily',
             lastSimWeekKey: loadedState.lastSimWeekKey ?? null,
             customDraftPickRules: loadedState.customDraftPickRules ?? [],
+            tournament: normalizedTournament,
         };
     }
     case 'CHANGE_VIEW': {
+      if (action.payload === GameStatus.TOURNAMENT && state.gameInSeason > 31 && !state.tournament) {
+        return {
+            ...state,
+            status: GameStatus.TOURNAMENT,
+            tournament: createTournament(state.allTeams),
+            currentDate: state.seasonAnchors?.selectionSunday || state.currentDate || SEASON_START_DATE,
+        };
+      }
       return { ...state, status: action.payload };
     }
     case 'SET_TOAST': {
@@ -5073,6 +5087,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             // Reset weekly/seasonal state
             gameInSeason: 1,
             week: 1,
+            signingPeriodDay: 1,
+            signingDaySummary: [],
+            seasonEndSummary: [],
+            rosterRolledOver: false,
+            offSeasonAdvanced: false,
             contactsMadeThisWeek: 0,
             trainingPointsUsedThisWeek: 0,
             lastSimResults: [],
@@ -6520,14 +6539,16 @@ const NavAndActions = ({
 
     // Refs for simulation state to avoid closure staleness in timeouts
     const isSimulatingSeasonRef = useRef(isSimulatingSeason);
+    const isSimulatingTournamentRef = useRef(isSimulatingTournament);
     const isSimulatingToGameRef = useRef(isSimulatingToGame);
     const stateRef = useRef(state);
     stateRef.current = state;
 
     useEffect(() => {
         isSimulatingSeasonRef.current = isSimulatingSeason;
+        isSimulatingTournamentRef.current = isSimulatingTournament;
         isSimulatingToGameRef.current = isSimulatingToGame;
-    }, [isSimulatingSeason, isSimulatingToGame]);
+    }, [isSimulatingSeason, isSimulatingTournament, isSimulatingToGame]);
 
     useEffect(() => {
         // Reset simulation state when season changes
@@ -6541,6 +6562,7 @@ const NavAndActions = ({
     }, [isSimulatingSeason, isSimulatingToGame, isSimulatingTournament, onSimulationStateChange]);
 
     const seasonTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const tournamentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         if (isSimulatingSeason) { 
@@ -6584,6 +6606,37 @@ const NavAndActions = ({
             }
         };
     }, [isSimulatingSeason]); // Only depends on toggle
+
+    useEffect(() => {
+        if (isSimulatingTournament) {
+            const runTournamentSim = () => {
+                if (!isSimulatingTournamentRef.current) return;
+
+                const currentState = stateRef.current;
+                const tournament = currentState.tournament;
+
+                if (currentState.status !== GameStatus.TOURNAMENT || !tournament || tournament.champion) {
+                    setIsSimulatingTournament(false);
+                    return;
+                }
+
+                dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' });
+
+                tournamentTimerRef.current = setTimeout(() => {
+                    runTournamentSim();
+                }, 50);
+            };
+
+            runTournamentSim();
+        }
+
+        return () => {
+            if (tournamentTimerRef.current) {
+                clearTimeout(tournamentTimerRef.current);
+                tournamentTimerRef.current = null;
+            }
+        };
+    }, [isSimulatingTournament]);
 
     
     // Ref to detect when game advances for SimToNextGame
@@ -6707,6 +6760,10 @@ const NavAndActions = ({
             actions.push({ label: 'Simulate Day', onClick: handleSimulate });
             actions.push({ label: 'Sim to Next Game', onClick: handleSimToNextGame });
         }
+        // Tournament missing (repair path)
+        else if (state.gameInSeason > 31 && !state.tournament) {
+            actions.push({ label: 'Start Tournament', onClick: () => dispatch({ type: 'CHANGE_VIEW', payload: GameStatus.TOURNAMENT }) });
+        }
         // Tournament (fallback)
         else if (state.tournament && !state.tournament.champion) {
             actions.push({ label: 'Simulate Round', onClick: () => dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' }) });
@@ -6807,7 +6864,7 @@ const NavAndActions = ({
                         {isSimulatingSeason ? 'Pause Season Sim' : 'Sim Season'}
                     </button>
                 )}
-                {state.gameInSeason > 31 && state.status === GameStatus.TOURNAMENT && !state.tournament?.champion && (
+                {state.gameInSeason > 31 && state.status === GameStatus.TOURNAMENT && state.tournament && !state.tournament.champion && (
                     <button 
                         style={buttonStyle}
                         onClick={() => setIsSimulatingTournament(prev => !prev)}
