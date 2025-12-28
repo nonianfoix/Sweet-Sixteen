@@ -869,16 +869,70 @@ export default function RecruitOfferDetailsModal({
 
               {showLongshots && longshotOfferDetails.length > 0 ? (
                 <div style={{ ...sectionCard, padding: '12px 14px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827', marginBottom: '8px' }}>Longshots</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 900, color: '#111827' }}>Longshots</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Chance · Prestige</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', color: '#6b7280', paddingBottom: '8px', borderBottom: '1px dashed rgba(15, 23, 42, 0.22)' }}>
+                    <span>School</span>
+                    <span style={{ display: 'inline-flex', gap: '10px', alignItems: 'center' }}>
+                      <span>Chance</span>
+                      <span style={{ width: '74px', textAlign: 'right' }}>Prestige</span>
+                    </span>
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {longshotOfferDetails.map(o => (
-                      <div key={o.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '13px', color: '#374151' }}>
-                        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.name}>
-                          {o.name}{o.rank ? ` (#${o.rank})` : ''}
-                        </span>
-                        <span style={{ color: '#6b7280' }}>{o.interestLabel}</span>
-                      </div>
-                    ))}
+                    {[...longshotOfferDetails]
+                      .sort((a, b) => (b.interestPct - a.interestPct) || ((a.rank ?? 9999) - (b.rank ?? 9999)))
+                      .map(o => {
+                        const team = teamsByName.get(o.name);
+                        const prestige = team?.prestige;
+                        const prestigePill = prestige != null ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '74px',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: '2px solid #0f172a',
+                              boxShadow: '1px 1px 0 #0f172a',
+                              background: prestige >= 85 ? '#86efac' : prestige >= 70 ? '#fde047' : '#e2e8f0',
+                              color: '#0f172a',
+                              fontSize: '11px',
+                              fontWeight: 900,
+                            }}
+                            title={team?.conference ? `${o.name} (${team.conference}) Prestige ${prestige}` : `${o.name} Prestige ${prestige}`}
+                          >
+                            P {prestige}
+                          </span>
+                        ) : (
+                          <span style={{ width: '74px', textAlign: 'right', color: '#9ca3af' }}>—</span>
+                        );
+
+                        return (
+                          <div
+                            key={o.name}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                              fontSize: '13px',
+                              color: '#374151',
+                              padding: '4px 0',
+                              borderTop: '1px solid rgba(148, 163, 184, 0.25)',
+                            }}
+                          >
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={team?.conference ? `${o.name} (${team.conference})` : o.name}>
+                              {o.name}{o.rank ? ` (#${o.rank})` : ''}
+                            </span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ color: '#6b7280', fontWeight: 700 }}>{o.interestLabel}</span>
+                              {prestigePill}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               ) : null}
