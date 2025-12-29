@@ -131,7 +131,12 @@ export const CITY_LOCATIONS: CityLocation[] = [
   { state: "NE", tier: "Tier 3", city: "Omaha", lat: 41.2565, lon: -95.9345 },
   { state: "IA", tier: "Tier 3", city: "Des Moines", lat: 41.5868, lon: -93.625 },
   { state: "KS", tier: "Tier 3", city: "Wichita", lat: 37.6889, lon: -97.3361 },
-  { state: "NM", tier: "Tier 3", city: "Albuquerque", lat: 35.0844, lon: -106.6504 }
+  { state: "NM", tier: "Tier 3", city: "Albuquerque", lat: 35.0844, lon: -106.6504 },
+  // Missing Upstate NY Cities
+  { state: "NY", tier: "Tier 2", city: "Buffalo", lat: 42.8864, lon: -78.8784 },
+  { state: "NY", tier: "Tier 2", city: "Rochester", lat: 43.1566, lon: -77.6088 },
+  { state: "NY", tier: "Tier 3", city: "Syracuse", lat: 43.0481, lon: -76.1474 },
+  { state: "NY", tier: "Tier 3", city: "Albany", lat: 42.6526, lon: -73.7562 }
 ];
 
 // Calculated State Centers (Average lat/lon of cities listed above)

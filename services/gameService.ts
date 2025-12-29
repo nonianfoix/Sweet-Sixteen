@@ -31,6 +31,7 @@ import {
   SCHOOL_SPONSORS, INITIAL_SPONSORS, CONFERENCE_STRENGTH, ARENA_CAPACITIES as LEGACY_ARENA_CAPACITIES, SPONSOR_SLOGANS, SCHOOL_ENDOWMENT_OVERRIDES, NBA_TEAMS, INTERNATIONAL_PROGRAMS,
   US_STATES, SCHOOL_STATES
 } from '../constants';
+import { generatePlayerName, generateFirstName, generateLastName } from '../constants/namePools';
 import { SCHOOL_LOCATIONS, BASKETBALL_HUBS } from '../constants/schoolCoordinates';
 import { pickHometownAnchor } from '../constants/hometownAnchors';
 import { REAL_HIGH_SCHOOLS } from '../constants/highSchools';
@@ -1109,7 +1110,7 @@ export const createPlayer = (year: Player['year'], forcedPosition?: RosterPositi
 
   const player: Player = {
     id: crypto.randomUUID(),
-    name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+    name: generatePlayerName(),
     position,
     secondaryPosition,
     height,
@@ -1679,7 +1680,7 @@ const simulateCareerTotals = (
             const pickChance = Math.max(0.04, stopPrestige / 220);
             if (Math.random() < pickChance) {
                 draftedPlayers.push({
-                    player: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+                    player: generatePlayerName(),
                     team: stop.teamName,
                     nbaTeam: pickRandom(NBA_TEAMS).name,
                     round: randomBetween(1, 2),
@@ -1746,7 +1747,7 @@ export const createHeadCoachProfile = (
     );
 
     const profile: HeadCoachProfile = {
-        name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+        name: generatePlayerName(),
         age: pickCoachAge(),
         almaMater: pickRandom(SCHOOLS),
         style: pickRandom(COACH_STYLES),
@@ -5254,13 +5255,9 @@ const nilPriorityInterestBonuses: Record<RecruitNilPriority, (team: Team) => num
 
 export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, context: { gameInSeason: number, isSigningPeriod?: boolean }, userCoachSkills?: string[]): number => {
         const prestige = team.recruitingPrestige ?? team.prestige ?? 50;
-        const isDukeTier = prestige >= 94;
-        if (isDukeTier) {
-            const recruitAcademicPreference = recruit.preferredProgramAttributes?.academics ?? 50;
-            if (recruitAcademicPreference < 40 || recruit.personalityTrait === 'Family Feud') {
-                return 1;
-            }
-        }
+        // NOTE: Elite Fit mismatch (low academics / Family Feud personality) is now a WARNING shown in the modal,
+        // not a scoring penalty. This allows elite programs like Duke to still recruit these players
+        // with their natural motivation-based scores. The warning informs the user of potential fit issues.
 	    // For CPU teams, establish a base interest that is NOT influenced by the user's interest level.
 	    // This prevents the user's recruiting efforts from artificially inflating CPU interest.
 	    const baseInterest = team.isUserTeam ? recruit.interest :
@@ -5573,7 +5570,7 @@ export const getRecruitWhyBadges = (
     const prestige = team.recruitingPrestige ?? team.prestige ?? 50;
     const wealth = getWealthRecruitingBonus(team);
 
-    const estDistanceMiles = estimateDistanceMiles(getRecruitOriginStateCode(recruit), team.state, `${recruit.id}:${team.name}`);
+    const estDistanceMiles = estimateRecruitDistanceMilesToTeam(recruit, team);
 
     const candidates: { label: string; score: number }[] = [
         { label: 'Exposure ++', score: exposureWeight * (0.55 * (prestige / 100) + 0.45 * (marketScore / 100)) },
@@ -5605,7 +5602,7 @@ export const calculateRecruitInterestBreakdown = (
 ) => {
     const recruitRegion = recruit.region || getRegionForState(recruit.homeState) || getRegionForState(recruit.hometownState);
     const teamRegion = getRegionForState(team.state);
-    const estDistanceMiles = estimateDistanceMiles(getRecruitOriginStateCode(recruit), team.state, `${recruit.id}:${team.name}`);
+    const estDistanceMiles = estimateRecruitDistanceMilesToTeam(recruit, team);
     const proximityScore = clamp(100 - Math.round(estDistanceMiles / 25), 0, 100);
 
     const hype = clamp(recruit.hypeLevel ?? (recruit.stars >= 5 ? 90 : recruit.stars === 4 ? 70 : recruit.stars === 3 ? 55 : 40), 0, 100);
@@ -6994,7 +6991,7 @@ const calculateOfferInterestShares = (
     return shares;
 		};
 
-export type RecruitOfferScore = { name: string; score: number };
+export type RecruitOfferScore = { name: string; score: number; prestige?: number };
 
 export const getRecruitOfferShareTemperatureMultiplier = (recruit: Recruit): number => {
     const decisionStyle: RecruitDecisionStyle = recruit.decisionStyle || 'Balanced';
@@ -7029,6 +7026,15 @@ export const buildRecruitOfferShortlist = (
     if (shortlist.length < min) {
         shortlist = sorted.slice(0, Math.min(min, sorted.length));
     }
+
+    // Force high-prestige (90+) schools onto shortlist - blue bloods represent prime opportunity/resources
+    // and should never be "longshots" regardless of other fit factors
+    const ELITE_PRESTIGE_THRESHOLD = 90;
+    sorted.forEach(o => {
+        if ((o.prestige ?? 0) >= ELITE_PRESTIGE_THRESHOLD && !shortlist.some(s => s.name === o.name)) {
+            shortlist.push(o);
+        }
+    });
 
     const forcedNames = new Set((options?.forceInclude || []).filter(Boolean));
     forcedNames.forEach(name => {
@@ -7971,7 +7977,7 @@ const createStaff = (role: StaffRole): Staff => {
 
     return {
         id: crypto.randomUUID(),
-        name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+        name: generatePlayerName(),
         role,
         grade,
         salary,

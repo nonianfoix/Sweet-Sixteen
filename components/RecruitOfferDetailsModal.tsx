@@ -134,7 +134,7 @@ export default function RecruitOfferDetailsModal({
 
   const { shortlist, shares } = useMemo(() => {
     return buildRecruitOfferShortlist(
-      sortedRawOffers.map(o => ({ name: o.name, score: o.score })),
+      sortedRawOffers.map(o => ({ name: o.name, score: o.score, prestige: o.prestige })),
       { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(recruit) }
     );
   }, [sortedRawOffers, recruit.id, gameInSeason, temperature]);
@@ -695,9 +695,9 @@ export default function RecruitOfferDetailsModal({
                       color: '#7f1d1d',
                     }}
                   >
-                    <div style={{ fontWeight: 900, marginBottom: '4px' }}>DUKE ALERT: ELITE FIT FAILED</div>
+                    <div style={{ fontWeight: 900, marginBottom: '4px' }}>⚠️ ELITE PROGRAM FIT WARNING</div>
                     <div style={{ opacity: 0.95 }}>
-                      Academics preference too low or character risk flagged. High-prestige programs won&apos;t sign this recruit.
+                      Recruit&apos;s academic preference is low or character is flagged. Elite programs may face challenges building rapport with this recruit.
                     </div>
                   </div>
                 ) : null}
@@ -860,7 +860,7 @@ export default function RecruitOfferDetailsModal({
               ) : null}
             </div>
 
-            <div style={{ flex: '3 1 0', minWidth: '460px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '2px solid #e2e8f0', background: '#f8fafc', overflowY: 'auto', height: '100%', padding: '18px' }}>
+            <div style={{ flex: '3 1 0', minWidth: '520px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '2px solid #e2e8f0', background: '#f8fafc', overflowY: 'auto', height: '100%', padding: '18px' }}>
               {(onContactRecruit || onOfferScholarship || onPullOffer || onCoachVisit || onScheduleOfficialVisit || onScout || onNegativeRecruit) ? (
                 <div style={{ ...sectionCard, padding: '14px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>

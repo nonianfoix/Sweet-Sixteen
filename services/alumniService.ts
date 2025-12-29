@@ -1,5 +1,6 @@
 import { AlumniProfile, AlumniRegistry, Player, Team, GameState, AlumniArchetype, DonorDilemma, EquityPool } from '../types';
 import { FIRST_NAMES, LAST_NAMES, ACTIVE_NBA_PLAYERS_DATA, FEMALE_FIRST_NAMES } from '../constants';
+import { generatePlayerName, generateFirstName, generateLastName } from '../constants/namePools';
 import { REAL_NBA_PLAYERS } from '../data/realNbaPlayers';
 import { SCHOOL_INSTITUTIONAL_PROFILES } from '../data/institutional_harvester/school_profiles.nokey.generated';
 import { BILLIONAIRE_ALMA_MATERS, TITAN_EARNINGS_RANGE } from '../data/billionaire_schools';
@@ -473,7 +474,7 @@ export const generateHistoricalAlumni = (team: Team): AlumniRegistry => {
             const gradSeason = -1 * randomBetween(1, 15); 
             const mockPlayer: Player = {
                 id: `mock-nba-${i}`,
-                name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+                name: generatePlayerName(),
                 position: pickRandom(['PG','SG','SF','PF','C']),
                 height: 75,
                 year: 'Sr',
@@ -502,9 +503,9 @@ export const generateHistoricalAlumni = (team: Team): AlumniRegistry => {
         const isFemale = Math.random() > 0.5;
         const firstName = isFemale ? pickRandom(FEMALE_FIRST_NAMES) : pickRandom(FIRST_NAMES);
 
-        const mockPlayer: Player = {
+            const mockPlayer: Player = {
             id: `mock-alum-${i}`,
-            name: `${firstName} ${pickRandom(LAST_NAMES)}`,
+            name: `${firstName} ${generateLastName()}`,
             position: pickRandom(['PG','SG','SF','PF','C']),
             height: 75,
             year: 'Sr',
@@ -606,7 +607,7 @@ export const seedAlumniRegistry = (team: Team): AlumniRegistry => {
              const gradYear = randomBetween(1980, 2015);
              const mockPlayer: Player = {
                  id: `seed-titan-${i}`,
-                 name: `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`,
+                 name: generatePlayerName(),
                  position: 'PG', 
                  height: 75,
                  year: 'Sr',

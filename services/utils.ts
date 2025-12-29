@@ -142,6 +142,7 @@ export const getSchoolLogoUrl = (schoolName: string): string | undefined => {
   if (!schoolName) return undefined;
 
   const specialCases: Record<string, string> = {
+    'USC': 'southern-california',
     Miami: 'miami-fl',
     'Miami (OH)': 'miami-oh',
     Albany: 'albany-ny',

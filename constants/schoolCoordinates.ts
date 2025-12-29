@@ -137,6 +137,18 @@ export const SCHOOL_LOCATIONS: Record<string, { lat: number; lon: number }> = {
     'Ohio': { lat: 39.3243, lon: -82.1012 },
     'Toledo': { lat: 41.6578, lon: -83.6136 },
     'Western Michigan': { lat: 42.2831, lon: -85.6139 },
+    // NYC / Metro Area (Missing)
+    'Stony Brook': { lat: 40.9126, lon: -73.1234 },
+    'Hofstra': { lat: 40.7145, lon: -73.6004 },
+    'Fordham': { lat: 40.8620, lon: -73.8856 },
+    'Iona': { lat: 40.9234, lon: -73.7846 },
+    'Manhattan': { lat: 40.8895, lon: -73.9015 },
+    'Wagner': { lat: 40.6154, lon: -74.0940 },
+    'LIU': { lat: 40.6913, lon: -73.9808 },
+    'Monmouth': { lat: 40.2796, lon: -74.0051 },
+    'Rider': { lat: 40.2815, lon: -74.7397 },
+    'Marist': { lat: 41.7231, lon: -73.9344 },
+    'Siena': { lat: 42.7184, lon: -73.7537 },
 };
 
 export const BASKETBALL_HUBS: Record<string, { lat: number; lon: number; city: string; state: string }> = {

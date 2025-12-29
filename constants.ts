@@ -734,6 +734,12 @@ export const SCHOOL_STATES: Record<string, string> = {
     'Wichita State': 'Kansas', 'Temple': 'Pennsylvania', 'Tulane': 'Louisiana', 'Tulsa': 'Oklahoma', 'South Florida': 'Florida',
     'UCF': 'Florida', 'Cincinnati': 'Ohio', 'East Carolina': 'North Carolina', 'Rice': 'Texas', 'North Texas': 'Texas', 'UAB': 'Alabama',
     'Charlotte': 'North Carolina', 'Florida Atlantic': 'Florida', 'UTSA': 'Texas',
+    // Additional schools for location accuracy
+    'Stony Brook': 'New York', 'Hofstra': 'New York', 'Iona': 'New York', 'Manhattan': 'New York', 'Marist': 'New York',
+    'Siena': 'New York', 'Niagara': 'New York', 'LIU': 'New York', 'Albany': 'New York', 'Binghamton': 'New York',
+    'Wagner': 'New York', 'Rider': 'New Jersey', 'Fairleigh Dickinson': 'New Jersey', 'Monmouth': 'New Jersey',
+    'Saint Peter\'s': 'New Jersey', 'NJIT': 'New Jersey', 'Buffalo': 'New York', 'Quinnipiac': 'Connecticut',
+    'Sacred Heart': 'Connecticut', 'Central Connecticut State': 'Connecticut', 'Fairfield': 'Connecticut',
 };
 
 export const COACH_SKILL_TREE: CoachSkill[] = [

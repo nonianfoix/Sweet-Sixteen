@@ -1,5 +1,34 @@
 import { CITY_LOCATIONS, STATE_WEIGHTS, STATE_CENTERS, CityLocation } from './geoData';
 
+// Map full state names to 2-letter codes
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA',
+  'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA',
+  'hawaii': 'HI', 'idaho': 'ID', 'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA',
+  'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+  'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS', 'missouri': 'MO',
+  'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+  'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH',
+  'oklahoma': 'OK', 'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+  'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT',
+  'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV', 'wisconsin': 'WI', 'wyoming': 'WY',
+  'district of columbia': 'DC', 'washington d.c.': 'DC', 'washington dc': 'DC', 'd.c.': 'DC',
+};
+
+/**
+ * Normalizes a state string to a 2-letter state code.
+ * Handles full state names ("New York" -> "NY") and already-coded states ("NY" -> "NY").
+ */
+export const normalizeStateCode = (state: string): string => {
+  if (!state) return '';
+  const trimmed = state.trim();
+  // If already a 2-letter code, just uppercase it
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  // Otherwise, look up in the map
+  const lowered = trimmed.toLowerCase();
+  return STATE_NAME_TO_CODE[lowered] || trimmed.toUpperCase();
+};
+
 /**
  * Calculates the Haversine distance between two points on Earth in miles.
  * Earth radius used: 3,958.8 miles.
@@ -71,17 +100,30 @@ export const findNearestRealCity = (lat?: number, lon?: number, city?: string, s
     return nearest;
   }
 
-  // 2. If no coords but we have state, try to find a city in that state (or state center)
+  // 2. If no coords but we have state, try to find the city
   if (state) {
-    const stateCities = CITY_LOCATIONS.filter(c => c.state === state);
+    // Normalize state to 2-letter code (handles "New York" -> "NY")
+    const normalizedState = normalizeStateCode(state);
+    
+    const stateCities = CITY_LOCATIONS.filter(c => c.state === normalizedState);
     if (stateCities.length > 0) {
+      if (city) {
+        const normalizedCity = city.toLowerCase().trim();
+        const exactMatch = stateCities.find(c => c.city.toLowerCase().trim() === normalizedCity);
+        if (exactMatch) return exactMatch;
+
+        // Try fuzzy match or partial?
+        const partialMatch = stateCities.find(c => c.city.toLowerCase().includes(normalizedCity) || normalizedCity.includes(c.city.toLowerCase()));
+        if (partialMatch) return partialMatch;
+      }
+      
       // Return the first city in that state as a reasonable proxy
       return stateCities[0];
     }
     
     // If state exists but no cities in our list, use state center proxy (New York if missing)
-    const center = STATE_CENTERS[state] || { lat: 40.7128, lon: -74.006 };
-    return { city: `State Center`, state, lat: center.lat, lon: center.lon, tier: 'Fallback' };
+    const center = STATE_CENTERS[normalizedState] || STATE_CENTERS['NY'] || { lat: 40.7128, lon: -74.006 };
+    return { city: `State Center`, state: normalizedState, lat: center.lat, lon: center.lon, tier: 'Fallback' };
   }
 
   // 3. Absolute fallback

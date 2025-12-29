@@ -3359,12 +3359,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	        if (!state.userTeam) return state;
 	        const offeredRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
             const userPrestige = state.userTeam.recruitingPrestige ?? state.userTeam.prestige ?? 50;
-            if (userPrestige >= 94) {
-                const recruitAcademicPreference = offeredRecruit?.preferredProgramAttributes?.academics ?? 50;
-                if (recruitAcademicPreference < 40 || offeredRecruit?.personalityTrait === 'Family Feud') {
-                    return { ...state, toastMessage: 'Elite Fit required: recruit rejected your offer (academics/character).' };
-                }
-            }
+            // NOTE: Elite Fit warnings are shown in the modal. We no longer block offers for low-academics recruits.
+            // This allows elite programs like Duke to pursue any player they choose.
 
             // Offer pruning (user team): enforce max active offers to prevent 40+ spam.
             const maxActiveOffers = userPrestige >= 94 ? 18 : userPrestige >= 80 ? 25 : 40;
@@ -8266,9 +8262,9 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                .map(teamName => {
 	                    const team = teamsByName.get(teamName);
 	                    if (!team) return null;
-	                    return { name: teamName, score: calculateRecruitInterestScore(r, team, { gameInSeason: state.gameInSeason }) };
+	                    return { name: teamName, score: calculateRecruitInterestScore(r, team, { gameInSeason: state.gameInSeason }), prestige: team.prestige ?? 50 };
 	                })
-	                .filter(Boolean) as { name: string; score: number }[];
+	                .filter(Boolean) as { name: string; score: number; prestige: number }[];
 	            if (!details.length) return;
 	            details.sort((a, b) => b.score - a.score);
 	            const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) });
@@ -8873,9 +8869,9 @@ const RecruitingAnalyticsModal = ({ recruits, allTeams, userTeam, gameInSeason, 
                 .map(name => {
                     const team = teamsByName.get(name);
                     if (!team) return null;
-                    return { name, score: calculateRecruitInterestScore(r, team, { gameInSeason }) };
+                    return { name, score: calculateRecruitInterestScore(r, team, { gameInSeason }), prestige: team.prestige ?? 50 };
                 })
-                .filter(Boolean) as { name: string; score: number }[];
+                .filter(Boolean) as { name: string; score: number; prestige: number }[];
             if (!details.length) return 0;
             const { shortlist } = buildRecruitOfferShortlist(details, { min: 3, max: 6, leaderWindow: 10, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) });
             return shortlist.length;
@@ -11424,7 +11420,7 @@ const SettingsModal = ({
 
 		    const sortedRawOffers = [...rawOffers].sort((a, b) => b.score - a.score);
 		    const { shortlist, shares } = buildRecruitOfferShortlist(
-		        sortedRawOffers.map(o => ({ name: o.name, score: o.score })),
+		        sortedRawOffers.map(o => ({ name: o.name, score: o.score, prestige: o.prestige })),
 		        { min: 3, max: 6, leaderWindow: 10, seedKey: `${recruit.id}:${gameInSeason}`, temperature, temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(recruit) }
 		    );
 	    const shortlistNames = new Set(shortlist.map(o => o.name));
