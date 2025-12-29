@@ -77,7 +77,12 @@ import type {
   Loan,
 	  MarketingCampaign,
 	  NilNegotiationStatus,
-	  OfferPitchType
+	  OfferPitchType,
+	  SponsorTier,
+	  PlayerDevelopmentDNA,
+	  PlayerPlayStyleIdentity,
+	  RecruitDecisionStyle,
+	  RecruitCommitmentStyle
 	} from './types';
 import { GameStatus, ScheduledEventStatus, EventType, GameEvent } from './types';
 import RecruitOfferDetailsModal from './components/RecruitOfferDetailsModal';
@@ -5384,20 +5389,7 @@ const GameLogView = ({ state, dispatch, colors }: { state: GameState, dispatch: 
                         ))}
                     </select>
                 </div>
-                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label style={{ fontSize: '0.75rem', margin: 0 }}>Rotation Preference:</label>
-                    <select
-                        value={state.rotationPreference}
-                        onChange={(e) => dispatch({ type: 'SET_ROTATION_PREFERENCE', payload: e.target.value as RotationPreference })}
-                        style={{ ...styles.select, minWidth: '160px' }}
-                    >
-                        {ROTATION_PREFERENCE_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value} title={option.description}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+
                 <div style={{ width: '48%' }}>
                     <Subheading color={colors.primary}>{awayTeam} Stats</Subheading>
                     <div style={styles.tableContainer}>
@@ -5845,9 +5837,6 @@ const schoolNameToSlug = (name: string): string => {
       "Miami": "miami-fl",
     "Cal State Fullerton": "cal-st-fullerton",
     "Cal State Northridge": "cal-st-northridge",
-    "Saint Mary's": "saint-marys",
-    "NC State": "nc-state",
-    "USC": "southern-cal",
     "Saint Joseph's": "saint-josephs",
     "Saint Peter's": "st-peters",
 
@@ -8091,11 +8080,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	    const [maxDistanceMiles, setMaxDistanceMiles] = useState(2500);
 	    const [stageFilter, setStageFilter] = useState<'all' | string>('all');
 	    const [needsFitOnly, setNeedsFitOnly] = useState(false);
-	    const [showColLocation, setShowColLocation] = useState(false);
-	    const [showColHighSchool, setShowColHighSchool] = useState(false);
-	    const [showColNationalRank, setShowColNationalRank] = useState(false);
-	    const [showColStage, setShowColStage] = useState(false);
-	    const [showColTop2, setShowColTop2] = useState(false);
+	    const [archetypeFilter, setArchetypeFilter] = useState<'all' | string>('all');
     type SortableKey = keyof Pick<Recruit, 'overall' | 'potential' | 'interest' | 'stars'> | 'rank';
     const [sortConfig, setSortConfig] = useState<{ key: SortableKey; direction: 'ascending' | 'descending' }>({ key: 'rank', direction: 'ascending' });
 
@@ -8122,6 +8107,16 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
         });
         return ranks;
     }, [state.recruits]);
+
+    const availableArchetypes = useMemo(() => {
+        const archs = new Set<string>();
+        state.recruits.forEach(r => {
+            if (r.archetype) archs.add(r.archetype);
+        });
+        return ['all', ...Array.from(archs).sort()];
+    }, [state.recruits]);
+
+
 
     const sortedRecruits = useMemo(() => {
         let sortableRecruits = [...state.recruits];
@@ -8169,6 +8164,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                const matchesSecondary = r.secondaryPosition === positionFilter;
 	                if (!matchesPrimary && !matchesSecondary) return false;
 	            }
+	            if (archetypeFilter !== 'all' && r.archetype !== archetypeFilter) return false;
 	            if (starFilter !== 'all' && r.stars !== starFilter) return false;
 	            if (r.interest < minInterest) return false;
 	            if (targetsOnly && !r.isTargeted) return false;
@@ -8193,7 +8189,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	            if (query && !r.name.toLowerCase().includes(query)) return false;
 	            return true;
 	        });
-	    }, [sortedRecruits, hideSigned, hideVerballyCommitted, showUserCommitsOnly, isSigningPeriod, positionFilter, starFilter, minInterest, targetsOnly, searchQuery, userTeamName, regionFilter, homeStateFilter, maxDistanceMiles, stageFilter, needsFitOnly, state.userTeam]);
+	    }, [sortedRecruits, hideSigned, hideVerballyCommitted, showUserCommitsOnly, isSigningPeriod, positionFilter, archetypeFilter, starFilter, minInterest, targetsOnly, searchQuery, userTeamName, regionFilter, homeStateFilter, maxDistanceMiles, stageFilter, needsFitOnly, state.userTeam]);
 
     const requestSort = (key: SortableKey) => {
         let direction: 'ascending' | 'descending' = 'descending';
@@ -8223,6 +8219,8 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	        hideSigned ||
 	        showUserCommitsOnly ||
 	        positionFilter !== 'all' ||
+            archetypeFilter !== 'all' ||
+
 	        starFilter !== 'all' ||
 	        minInterest > 0 ||
 	        targetsOnly ||
@@ -8246,6 +8244,8 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	        setHomeStateFilter('all');
 	        setMaxDistanceMiles(2500);
 	        setStageFilter('all');
+	        setArchetypeFilter('all');
+
 	        setNeedsFitOnly(false);
 	    };
 
@@ -8258,7 +8258,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	    const teamsByName = useMemo(() => new Map(state.allTeams.map(t => [t.name, t])), [state.allTeams]);
 	    const topTwoByRecruitId = useMemo(() => {
 	        const map = new Map<string, { leader?: string; second?: string }>();
-	        if (!showColTop2) return map;
+
 	        state.recruits.forEach(r => {
 	            const offerNames = [...(r.cpuOffers || []), ...(r.userHasOffered ? [state.userTeam!.name] : [])];
 	            if (offerNames.length === 0) return;
@@ -8277,7 +8277,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	            map.set(r.id, { leader, second });
 	        });
 	        return map;
-	    }, [showColTop2, state.recruits, state.userTeam, state.allTeams, state.gameInSeason, teamsByName]);
+	    }, [state.recruits, state.userTeam, state.allTeams, state.gameInSeason, teamsByName]);
 
 	    const viewingOffersFor = viewingOffersRecruitId
 	        ? (state.recruits.find(r => r.id === viewingOffersRecruitId) || null)
@@ -8338,187 +8338,134 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                 />
             )}
             <div style={styles.recruitingHeader}>
-                <div>
-                    <p>Contacts made this {isSigningPeriod ? 'day' : 'week'}: {state.contactsMadeThisWeek}/{getContactPoints(state.userTeam)}</p>
-                    <p style={{ fontSize: '0.6rem', marginTop: '5px', color: '#555' }}>{teamNeeds}</p>
-                    <div style={styles.searchBarRow}>
+                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#fff', padding: '10px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0'}}>
+                     <div style={{display: 'flex', gap: '20px', alignItems: 'center'}}>
+                         <div style={{display: 'flex', flexDirection: 'column'}}>
+                            <span style={{fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b'}}>Weekly Contacts</span>
+                            <span style={{fontSize: '1rem', fontWeight: 900, color: '#0f172a'}}>
+                                {state.contactsMadeThisWeek} <span style={{color:'#94a3b8', fontSize: '0.8rem'}}>/ {getContactPoints(state.userTeam)}</span>
+                            </span>
+                         </div>
+                         <div style={{width: '1px', height: '24px', background: '#cbd5e1'}}></div>
+                         <div style={{display: 'flex', flexDirection: 'column'}}>
+                            <span style={{fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b'}}>Scholarships</span>
+                            <span style={{fontSize: '1rem', fontWeight: 900, color: availableScholarships < 0 ? '#ef4444' : '#0f172a'}}>
+                                {availableScholarships} <span style={{color:'#94a3b8', fontSize: '0.8rem'}}>/ {totalScholarships}</span>
+                            </span>
+                         </div>
+                     </div>
+                     <div style={{display: 'flex', gap: '8px'}}>
+                        <button 
+                            style={{ ...styles.smallButton, background: '#f8fafc', border: '1px solid #cbd5e1', color: '#334155' }}
+                            onClick={resetRecruitFilters} 
+                            disabled={!filtersActive} 
+                        >
+                            Clear Filters
+                        </button>
+                        <button 
+                            style={{ ...styles.smallButton, background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#0f172a' }}
+                            onClick={() => setShowRecruitingAnalytics(true)}
+                        >
+                            Analytics
+                        </button>
+                     </div>
+                 </div>
+
+                 {teamNeeds && (
+                     <div style={{fontSize: '0.65rem', color: '#475569', marginBottom: '12px', padding: '8px 12px', background: '#f8fafc', borderRadius: '6px', borderLeft: '4px solid #3b82f6'}}>
+                        <strong style={{color: '#0f172a'}}>Team Needs:</strong> {teamNeeds}
+                     </div>
+                 )}
+
+                 <div style={{display: 'flex', flexDirection: 'column', gap: '10px', background: '#e2e8f0', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1'}}>
+                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            placeholder="Search recruits by name..."
-                            style={styles.searchInput}
+                            placeholder="Search recruits..."
+                            style={{...styles.searchInput, flex: '2 1 200px', height: '32px'}}
                         />
-                        <button
-                            style={{ ...styles.clearFiltersButton, opacity: filtersActive ? 1 : 0.6 }}
-                            onClick={resetRecruitFilters}
-                            disabled={!filtersActive}
-                        >
-                            Clear Filters
-                        </button>
+                         <select value={positionFilter} onChange={e => setPositionFilter(e.target.value as 'all' | RosterPositions)} style={{...styles.select, flex: '1 1 100px', height: '32px' as any}}>
+                            {positionOptions.map(option => <option key={option} value={option}>{option === 'all' ? 'All Pos' : option}</option>)}
+                        </select>
+                         <select value={archetypeFilter} onChange={e => setArchetypeFilter(e.target.value)} style={{...styles.select, flex: '1 1 140px', height: '32px' as any}}>
+                            {availableArchetypes.map(a => <option key={a} value={a}>{a === 'all' ? 'All Archetypes' : a}</option>)}
+                        </select>
+                         <select value={starFilter} onChange={e => setStarFilter(e.target.value === 'all' ? 'all' : Number(e.target.value) as any)} style={{...styles.select, flex: '1 1 100px', height: '32px' as any}}>
+                            {starOptions.map(option => <option key={option} value={option}>{option === 'all' ? 'All Stars' : `${option}-Star`}</option>)}
+                        </select>
                     </div>
-                    <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '0.6rem', color: '#333' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input
-                                type="checkbox"
-                                checked={hideVerballyCommitted}
-                                onChange={e => setHideVerballyCommitted(e.target.checked)}
-                            />
-                            Hide verbally committed
+                    
+                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center'}}>
+                         <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} style={{...styles.select, flex: '1 1 120px', height: '30px' as any, fontSize: '0.6rem'}}>
+                            <option value="all">All Stages</option>
+                            <option value="Open">Open</option>
+                            <option value="Narrowing">Narrowing</option>
+                            <option value="SoftCommit">Soft Commit</option>
+                            <option value="HardCommit">Hard Commit</option>
+                            <option value="Signed">Signed</option>
+                        </select>
+                         <select value={regionFilter} onChange={e => setRegionFilter(e.target.value as any)} style={{...styles.select, flex: '1 1 120px', height: '30px' as any, fontSize: '0.6rem'}}>
+                             <option value="all">All Regions</option>
+                             <option value="Northeast">Northeast</option>
+                             <option value="Midwest">Midwest</option>
+                             <option value="South">South</option>
+                             <option value="West">West</option>
+                         </select>
+                        <label style={{ ...styles.filterControl, flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{fontSize: '0.55rem', fontWeight: 'bold'}}>Min Interest: {minInterest}%</span>
+                            <input type="range" min={0} max={100} value={minInterest} onChange={e => setMinInterest(parseInt(e.target.value))} style={{width: '90%'}}/>
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input
-                                type="checkbox"
-                                checked={hideSigned}
-                                onChange={e => setHideSigned(e.target.checked)}
-                            />
-                            Hide signed
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input
-                                type="checkbox"
-                                checked={showUserCommitsOnly}
-                                onChange={e => setShowUserCommitsOnly(e.target.checked)}
-                            />
-                            My commits only
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input
-                                type="checkbox"
-                                checked={targetsOnly}
-                                onChange={e => setTargetsOnly(e.target.checked)}
-                            />
-                            Targets only
+                         <label style={{ ...styles.filterControl, flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{fontSize: '0.55rem', fontWeight: 'bold'}}>Max Dist: {maxDistanceMiles}mi</span>
+                            <input type="range" min={0} max={2500} step={50} value={maxDistanceMiles} onChange={e => setMaxDistanceMiles(parseInt(e.target.value))} style={{width: '90%'}}/>
                         </label>
                     </div>
-	                    <div style={styles.recruitFiltersRow}>
-	                        <label style={styles.filterControl}>
-	                            <span>Position</span>
-	                            <select value={positionFilter} onChange={e => setPositionFilter(e.target.value as 'all' | RosterPositions)}>
-	                                {positionOptions.map(option => (
-	                                    <option key={option} value={option}>
-	                                        {option === 'all' ? 'All' : option}
-	                                    </option>
-	                                ))}
-	                            </select>
-	                        </label>
-	                        <label style={styles.filterControl}>
-	                            <span>Stars</span>
-	                            <select value={starFilter} onChange={e => setStarFilter(e.target.value === 'all' ? 'all' : Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}>
-	                                {starOptions.map(option => (
-	                                    <option key={option} value={option}>
-	                                        {option === 'all' ? 'All' : `${option}-Star`}
-	                                    </option>
-	                                ))}
-	                            </select>
-	                        </label>
-	                        <label style={styles.filterControl}>
-	                            <span>Region</span>
-	                            <select value={regionFilter} onChange={e => setRegionFilter(e.target.value as any)}>
-	                                <option value="all">All</option>
-	                                <option value="Northeast">Northeast</option>
-	                                <option value="Midwest">Midwest</option>
-	                                <option value="South">South</option>
-	                                <option value="West">West</option>
-	                            </select>
-	                        </label>
-	                        <label style={styles.filterControl}>
-	                            <span>State</span>
-	                            <select value={homeStateFilter} onChange={e => setHomeStateFilter(e.target.value)}>
-	                                <option value="all">All</option>
-	                                {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-	                            </select>
-	                        </label>
-	                        <label style={styles.filterControl}>
-	                            <span>Stage</span>
-	                            <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
-	                                <option value="all">All</option>
-	                                <option value="Open">Open</option>
-	                                <option value="Narrowing">Narrowing</option>
-	                                <option value="SoftCommit">Soft Commit</option>
-	                                <option value="HardCommit">Hard Commit</option>
-	                                <option value="Signed">Signed</option>
-	                            </select>
-	                        </label>
-	                        <label style={{ ...styles.filterControl, flex: '2 1 220px' }}>
-	                            <span>Minimum Interest: {minInterest}%</span>
-	                            <input
-	                                type="range"
-	                                min={0}
-	                                max={100}
-	                                value={minInterest}
-	                                onChange={e => setMinInterest(parseInt(e.target.value))}
-	                            />
-	                        </label>
-	                        <label style={{ ...styles.filterControl, flex: '2 1 220px' }}>
-	                            <span>Max Distance: {maxDistanceMiles} mi</span>
-	                            <input
-	                                type="range"
-	                                min={0}
-	                                max={2500}
-	                                step={50}
-	                                value={maxDistanceMiles}
-	                                onChange={e => setMaxDistanceMiles(parseInt(e.target.value))}
-	                            />
-	                        </label>
-	                        <label style={{ ...styles.filterControl, flex: '0 0 auto', alignItems: 'center' }}>
-	                            <span>Needs Fit</span>
-	                            <input type="checkbox" checked={needsFitOnly} onChange={e => setNeedsFitOnly(e.target.checked)} />
-	                        </label>
-	                    </div>
-	                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '0.6rem', color: '#333' }}>
-	                        <span style={{ fontWeight: 'bold' }}>Columns:</span>
-	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-	                            <input type="checkbox" checked={showColLocation} onChange={e => setShowColLocation(e.target.checked)} />
-	                            Location
-	                        </label>
-	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-	                            <input type="checkbox" checked={showColHighSchool} onChange={e => setShowColHighSchool(e.target.checked)} />
-	                            HS
-	                        </label>
-	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-	                            <input type="checkbox" checked={showColNationalRank} onChange={e => setShowColNationalRank(e.target.checked)} />
-	                            Nat Rank
-	                        </label>
-	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-	                            <input type="checkbox" checked={showColStage} onChange={e => setShowColStage(e.target.checked)} />
-	                            Stage
-	                        </label>
-	                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-	                            <input type="checkbox" checked={showColTop2} onChange={e => setShowColTop2(e.target.checked)} />
-	                            Top 2
-	                        </label>
-	                    </div>
-	                </div>
-	                <div style={{ textAlign: 'right' }}>
-	                    <p style={scholarshipTextStyle}>Available Scholarships: {availableScholarships}/{totalScholarships}</p>
-	                    <button style={{ ...styles.smallButton, marginTop: '6px' }} onClick={() => setShowRecruitingAnalytics(true)}>
-	                        Analytics
-	                    </button>
-	                </div>
-	            </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '0.6rem', color: '#334155', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={hideVerballyCommitted} onChange={e => setHideVerballyCommitted(e.target.checked)} />
+                            Hide Committed
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={hideSigned} onChange={e => setHideSigned(e.target.checked)} />
+                            Hide Signed
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showUserCommitsOnly} onChange={e => setShowUserCommitsOnly(e.target.checked)} />
+                            My Commits
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={targetsOnly} onChange={e => setTargetsOnly(e.target.checked)} />
+                            Targets Only
+                        </label>
+                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={needsFitOnly} onChange={e => setNeedsFitOnly(e.target.checked)} />
+                            Needs Fit
+                        </label>
+                    </div>
+                 </div>
+            </div>
             <div style={styles.tableContainer}>
             <table style={{...styles.table, fontSize: '0.6rem'}}>
 	                <thead style={styles.recruitingThead}>
 	                    <tr>
-	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('rank')}>Rank {renderSortArrow('rank')}</th>
-	                        <th style={{...styles.th, width: '18%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
-	                        {showColLocation && <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Loc</th>}
-	                        {showColHighSchool && <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>HS</th>}
-	                        {showColNationalRank && <th style={{...styles.th, width: '7%', backgroundColor: colors.primary, color: colors.text}}>Nat</th>}
-	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
-	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
-	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
-	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
-	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
-	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
-	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
-	                        {showColStage && <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Stage</th>}
-	                        {showColTop2 && <th style={{...styles.th, width: '14%', backgroundColor: colors.primary, color: colors.text}}>Top 2</th>}
-	                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
-	                        <th style={{...styles.th, width: '15%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
-	                        <th style={{...styles.th, width: '11%', backgroundColor: colors.primary, color: colors.text}}>Actions</th>
-	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('rank')}>Rank {renderSortArrow('rank')}</th>
+	                        <th style={{...styles.th, width: '16%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
+	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
+	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
+	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
+	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
+	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Stage</th>
+	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Top 2</th>
+	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
+	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
+	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Actions</th>
+	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
 	                    </tr>
 	                </thead>
                 <tbody>
@@ -8566,20 +8513,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                     )}
                                     {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>💎</span>}
                                     {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>💔</span>}
-	                                </td>
-	                                {showColLocation && (
-	                                    <td style={styles.td} title={`Est. distance: ${estimateRecruitDistanceMilesToTeam(r, state.userTeam!).toLocaleString()} mi`}>
-	                                        {[r.hometownCity, r.hometownState || r.homeState].filter(Boolean).join(', ') || '—'}
-	                                    </td>
-	                                )}
-	                                {showColHighSchool && (
-	                                    <td style={styles.td} title={r.highSchoolName || ''}>
-	                                        {r.highSchoolName || '—'}
-	                                    </td>
-	                                )}
-	                                {showColNationalRank && (
-	                                    <td style={styles.td}>{r.nationalRank ? `#${r.nationalRank}` : '—'}</td>
-	                                )}
+	        </td>
 	                                <td style={styles.td}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                             <StarRating stars={r.stars}/>
@@ -8607,11 +8541,8 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                        </div>
 	                                    </div>
 	                                </td>
-	                                {showColStage && (
-	                                    <td style={styles.td}>{r.recruitmentStage || (r.verbalCommitment ? 'HardCommit' : 'Open')}</td>
-	                                )}
-	                                {showColTop2 && (
-	                                    <td style={styles.td}>
+	                                <td style={styles.td}>{r.recruitmentStage || (r.verbalCommitment ? 'HardCommit' : 'Open')}</td>
+	                                <td style={styles.td}>
 	                                        {(() => {
 	                                            const top2 = topTwoByRecruitId.get(r.id);
 	                                            if (!top2?.leader) return '—';
@@ -8623,7 +8554,6 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                            );
 	                                        })()}
 	                                    </td>
-	                                )}
 	                                <td style={{...styles.td, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }}>
 	                                    {r.verbalCommitment ? (
 	                                        <CommitmentStatus teamName={r.verbalCommitment} teamRank={committedTeamRank} isSigningPeriod={!!isSigningPeriod} isSoftCommit={!isSigningPeriod ? r.softCommitment : undefined} />
@@ -8638,41 +8568,167 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                 </td>
                                 <td style={styles.td}>
                                     <div style={styles.actionGrid}>
-                                        <button
-                                          style={styles.smallButton}
-                                          onClick={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: r.id } })}
-                                          disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)}
-                                        >
-                                          {userHasOffered ? 'Maintain (1)' : 'Contact (1)'}
-                                        </button>
-                                        {userHasOffered ? (
-                                          <button style={styles.pullButton} onClick={() => dispatch({type: 'PULL_SCHOLARSHIP', payload: {recruitId: r.id}})} disabled={isCommittedAndLocked}>
-                                            Pull Offer
-                                          </button>
-                                        ) : (
-	                                        <button style={styles.smallButton} onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(true); }} disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}>Offer (9)</button>
-                                        )}
-                                        <button style={styles.smallButton} onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}>Coach Visit (5)</button>
-                                        <button style={styles.smallButton} onClick={() => setSchedulingVisitFor(r)} disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}>Official Visit (8)</button>
-                                        <button 
-                                            style={styles.smallButton} 
-                                            onClick={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: r.id, cost: 3 } })} 
-                                            disabled={isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
-                                        >
-                                            Scout ({(state.userTeam?.scoutingReports?.[r.id] || 0)}/3) (3)
-                                        </button>
-                                        <button
-                                            style={styles.smallButton}
-                                            onClick={() => setNegativeRecruitingFor(r)}
-                                            disabled={contactPointsRemaining <= 0}
-                                        >
-                                            Negative Recruit
-                                        </button>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' }}>
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: '2px solid #0f172a',
+                                                  background: userHasOffered ? '#ffffff' : '#fde047',
+                                                  color: '#0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  fontWeight: 900,
+                                                  fontSize: '10px',
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: r.id } })}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)}
+                                                title={userHasOffered ? 'Maintain (1)' : 'Contact (1)'}
+                                            >
+                                                {userHasOffered ? 'Maintain' : 'Contact'}
+                                            </button>
+
+                                            {userHasOffered ? (
+                                                <button
+                                                    style={{
+                                                      padding: '4px 8px',
+                                                      borderRadius: '6px',
+                                                      border: '2px solid #0f172a',
+                                                      background: '#fca5a5',
+                                                      color: '#0f172a',
+                                                      boxShadow: isCommittedAndLocked ? 'none' : '2px 2px 0 #0f172a',
+                                                      fontWeight: 900,
+                                                      fontSize: '10px',
+                                                      cursor: isCommittedAndLocked ? 'not-allowed' : 'pointer',
+                                                      opacity: isCommittedAndLocked ? 0.55 : 1,
+                                                      whiteSpace: 'nowrap',
+                                                    }}
+                                                    onClick={() => dispatch({type: 'PULL_SCHOLARSHIP', payload: {recruitId: r.id}})}
+                                                    disabled={isCommittedAndLocked}
+                                                >
+                                                    Pull
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    style={{
+                                                      padding: '4px 8px',
+                                                      borderRadius: '6px',
+                                                      border: '2px solid #0f172a',
+                                                      background: '#fde047',
+                                                      color: '#0f172a',
+                                                      boxShadow: (isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                      fontWeight: 900,
+                                                      fontSize: '10px',
+                                                      cursor: (isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                      opacity: (isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                      whiteSpace: 'nowrap',
+                                                    }}
+                                                    onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(true); }}
+                                                    disabled={isCommittedAndLocked || hasUserDeclined || isCommittedToOther || state.contactsMadeThisWeek + 9 > getContactPoints(state.userTeam)}
+                                                >
+                                                    Offer
+                                                </button>
+                                            )}
+
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: '2px solid #0f172a',
+                                                  background: '#ffffff',
+                                                  color: '#0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  fontWeight: 900,
+                                                  fontSize: '10px',
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}
+                                            >
+                                                Visit
+                                            </button>
+
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: '2px solid #0f172a',
+                                                  background: '#ffffff',
+                                                  color: '#0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  fontWeight: 900,
+                                                  fontSize: '10px',
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => setSchedulingVisitFor(r)}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}
+                                            >
+                                                Official
+                                            </button>
+
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: '2px solid #0f172a',
+                                                  background: '#ffffff',
+                                                  color: '#0f172a',
+                                                  boxShadow: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  fontWeight: 900,
+                                                  fontSize: '10px',
+                                                  cursor: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: r.id, cost: 3 } })}
+                                                disabled={isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
+                                            >
+                                                Scout
+                                            </button>
+
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: '2px solid #0f172a',
+                                                  background: '#ffffff',
+                                                  color: '#0f172a',
+                                                  boxShadow: (contactPointsRemaining <= 0) ? 'none' : '2px 2px 0 #0f172a',
+                                                  fontWeight: 900,
+                                                  fontSize: '10px',
+                                                  cursor: (contactPointsRemaining <= 0) ? 'not-allowed' : 'pointer',
+                                                  opacity: (contactPointsRemaining <= 0) ? 0.55 : 1,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => setNegativeRecruitingFor(r)}
+                                                disabled={contactPointsRemaining <= 0}
+                                            >
+                                                Neg
+                                            </button>
+                                        </div>
                                     </div>
                                 </td>
                                 <td style={styles.td}>
-                                    <button 
-                                        style={{ ...styles.smallButton, backgroundColor: r.isTargeted ? '#4CAF50' : '#C0C0C0' }}
+                                    <button
+                                        style={{
+                                          padding: '4px 8px',
+                                          borderRadius: '6px',
+                                          border: '2px solid #0f172a',
+                                          background: r.isTargeted ? '#86efac' : '#ffffff',
+                                          color: '#0f172a',
+                                          boxShadow: '2px 2px 0 #0f172a',
+                                          fontWeight: 900,
+                                          fontSize: '10px',
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap',
+                                        }}
                                         onClick={() => dispatch({ type: 'TOGGLE_RECRUIT_TARGET', payload: { recruitId: r.id } })}
                                     >
                                         {r.isTargeted ? 'Targeted' : 'Target'}
@@ -8859,7 +8915,7 @@ const RecruitingAnalyticsModal = ({ recruits, allTeams, userTeam, gameInSeason, 
                 <div style={{ marginTop: '12px', fontSize: '0.8rem' }}>
                     <h4 style={{ margin: '10px 0 6px 0' }}>Stage Breakdown</h4>
                     <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                        {Object.entries(metrics.stageCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                        {Object.entries(metrics.stageCounts).sort((a, b) => (b[1] as number) - (a[1] as number)).map(([k, v]) => (
                             <li key={k}>{k}: {v}</li>
                         ))}
                     </ul>

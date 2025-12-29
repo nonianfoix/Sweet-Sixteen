@@ -378,6 +378,7 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   decisionStyle?: RecruitDecisionStyle;
   commitmentStyle?: RecruitCommitmentStyle;
   fitStrictness?: number; // 0-100, higher = sharper preferences + tougher to win over
+  shortlistHistory?: Record<string, number>; // teamName -> consecutive days on shortlist
   pendingCommitment?: {
       school: string;
       date: string;
@@ -1256,6 +1257,8 @@ export interface GameResult {
   day?: number;
   date?: ISODate;
   gameEventId?: string;
+  isConference?: boolean;
+  overtime?: boolean;
 }
 
 export interface PlayerGameStatsData {
@@ -1909,3 +1912,5 @@ export interface NBAContractProfile {
     yearsLeft: number;
     yearlySalaries: number[];
 }
+
+export type MotivationKey = keyof RecruitMotivation;

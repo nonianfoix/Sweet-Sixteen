@@ -21,7 +21,9 @@ import {
     SponsorName, // Added SponsorName import
     NBAFreeAgent, NBATransaction, DraftPickRule, DraftPickAsset, // Added NBA types
     NBA_MINIMUM_SALARY, NBA_SALARY_CAP_2025, NBA_LUXURY_TAX_THRESHOLD_2025, // Added constant
-    GameEvent, EventType, GameDate // Added Event Types
+    GameEvent, EventType, GameDate, // Added Event Types
+    PlayerPlayStyleIdentity, RecruitDecisionStyle, RecruitCommitmentStyle,
+    AthleticismTier
 } from '../types';
 import { SCHOOL_INSTITUTIONAL_PROFILES } from '../data/institutional_harvester/school_profiles.nokey.generated';
 import {
@@ -29,9 +31,12 @@ import {
   SCHOOL_SPONSORS, INITIAL_SPONSORS, CONFERENCE_STRENGTH, ARENA_CAPACITIES as LEGACY_ARENA_CAPACITIES, SPONSOR_SLOGANS, SCHOOL_ENDOWMENT_OVERRIDES, NBA_TEAMS, INTERNATIONAL_PROGRAMS,
   US_STATES, SCHOOL_STATES
 } from '../constants';
-import { SCHOOL_LOCATIONS } from '../constants/schoolCoordinates';
+import { SCHOOL_LOCATIONS, BASKETBALL_HUBS } from '../constants/schoolCoordinates';
 import { pickHometownAnchor } from '../constants/hometownAnchors';
 import { REAL_HIGH_SCHOOLS } from '../constants/highSchools';
+import { normalizePlayerName } from './utils';
+import { getRandomRecruitOrigin, calculateHaversineDistance, findNearestRealCity } from './geoService';
+import { STATE_CENTERS } from './geoData';
 import { ARENA_CAPACITIES as AUTHORITATIVE_ARENA_CAPACITIES } from '../new_arena_capacities';
 import { NCAA_TOURNAMENT_CHAMPIONS } from '../realWorldData';
 import { REAL_NBA_PLAYERS } from '../data/realNbaPlayers';
@@ -62,6 +67,7 @@ import { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } fr
 export { buildSeasonAnchors, generateSeasonSchedule, validateSeasonSchedule } from './seasonScheduleService';
 import { logTelemetryEvent } from './telemetryService';
 import collegeSrsCsv from '../data/College SRS.csv?raw';
+// const collegeSrsCsv = "";
 
 // Dev note: Updated services/gameService.ts (calculateRecruitInterestScore, processRecruitingWeek, package-deal helpers),
 // types.ts (Recruit.packageDealActive), and src/App.scenario.test.ts (package-deal scenario test).
@@ -1183,31 +1189,54 @@ const PLAY_STYLE_TAGS_BY_POSITION: Record<string, string[]> = {
 
 const ATHLETICISM_TIERS: Recruit['athleticismTier'][] = ['A', 'B', 'C', 'D'];
 
-const buildHighSchoolName = (city: string): { name: string; type: Recruit['highSchoolType'] } => {
+// Replaces buildHighSchoolName with smarter logic
+const buildHighSchoolName = (city: string, stateCode?: string): { name: string; type: Recruit['highSchoolType'] } => {
     const roll = Math.random();
+    // Weighted types based somewhat on reality (private/prep more common for prospects)
     const type: Recruit['highSchoolType'] =
-        roll < 0.72 ? 'Public' : roll < 0.9 ? 'Private' : 'Prep';
+        roll < 0.65 ? 'Public' : roll < 0.88 ? 'Private' : 'Prep';
 
     const suffix = pickRandom(HIGH_SCHOOL_SUFFIXES);
     const first = pickRandom(FIRST_NAMES);
     const last = pickRandom(LAST_NAMES);
+    
+    // Regional/State flavor logic
+    const isCoastal = stateCode && ['CA', 'FL', 'NY', 'NJ', 'WA', 'OR', 'MA', 'MD', 'VA'].includes(stateCode);
+
     if (type === 'Public') {
         const patternRoll = Math.random();
-        if (patternRoll < 0.45) return { name: `${city} ${suffix}`, type };
-        if (patternRoll < 0.75) return { name: `${city} ${last} ${suffix}`, type };
+        // Coastal/South public schools often just "City HS" or "Directional City"
+        if (patternRoll < 0.40) return { name: `${city} ${suffix}`, type };
+        
+        // Named after people (very common)
+        if (patternRoll < 0.70) return { name: `${city} ${last} ${suffix}`, type };
+        
+        // Full name
         return { name: `${city} ${first} ${last} ${suffix}`, type };
     }
+    
+    // Private/Prep/Catholic
     const prefix = pickRandom(HIGH_SCHOOL_PREFIXES);
     const patternRoll = Math.random();
-    if (patternRoll < 0.55) return { name: `${prefix} ${last} ${suffix}`, type };
+    
+    if (type === 'Private' || type === 'Prep') {
+        // Catholic/Christian/Academy names
+        if (isCoastal && Math.random() < 0.4) {
+             return { name: `${prefix} ${last} ${Math.random() < 0.5 ? 'Catholic' : 'Prep'}`, type };
+        }
+        if (patternRoll < 0.55) return { name: `${prefix} ${last} ${suffix}`, type };
+        return { name: `${city} ${last} ${suffix}`, type }; // e.g. "Atlanta Christian Academy"
+    }
+
     return { name: `${prefix} ${first} ${last} ${suffix}`, type };
 };
 
 const pickRealHighSchoolForState = (stateCode: string): { name: string; type: Recruit['highSchoolType']; city: string; lat: number; lon: number } | null => {
-    const code = normalizeStateCode(stateCode || '');
+    const code = stateCode;
     if (!code) return null;
     const candidates = REAL_HIGH_SCHOOLS.filter(s => s.stateCode === code);
     if (!candidates.length) return null;
+    
     const chosen = pickRandom(candidates);
     const type: Recruit['highSchoolType'] = chosen.type;
     return { name: chosen.name, type, city: chosen.city, lat: chosen.lat, lon: chosen.lon };
@@ -1317,192 +1346,230 @@ export const createRecruit = (): Recruit => {
 
 	    const interestRange = starBands[stars].interest;
 	    const baseInterest = randomBetween(interestRange[0], interestRange[1]);
-		    const hometownState = playerPart.homeState || pickRandom(US_STATES);
-            const hometownStateCode = normalizeStateCode(hometownState);
-            const anchor = pickHometownAnchor(hometownStateCode, `${playerPart.id}:${hometownStateCode}`) || null;
-		    const realHighSchoolRoll = Math.random();
-		    const realHighSchool = realHighSchoolRoll < 0.12 ? pickRealHighSchoolForState(hometownStateCode) : null;
-		    const hometownCity = realHighSchool?.city || anchor?.city || pickRandom(HOMETOWN_CITY_POOL);
-		    const highSchool = realHighSchool ? { name: realHighSchool.name, type: realHighSchool.type } : buildHighSchoolName(hometownCity);
-		    const { nationalRank, positionalRank } = generateApproxRecruitRanks(stars, playerPart.position);
-	
-	    const archetype: RecruitArchetype = pickRandom(['Mercenary', 'HometownHero', 'ProcessTrustor', 'FameSeeker']);
-	    const motivations = generateRecruitMotivations(archetype);
-		    const region = getRegionForState(hometownState);
-		    const metroArea = Math.random() < 0.25 ? hometownCity : undefined;
-		    const hypeLevel = clamp(Math.round((stars * 18) + randomBetween(-8, 10) + (nationalRank <= 50 ? 10 : 0)), 0, 100);
-		    const favoredCoachStyle = pickRandom(['Offense', 'Defense', 'Player Development', 'Recruiting', 'Tempo', 'Balanced'] as HeadCoachProfile['style'][]);
-	
-	    const height = playerPart.height || 78;
-	    const baseWingspan = height + (playerPart.position === 'C' ? 6 : playerPart.position === 'PF' ? 5 : playerPart.position === 'SF' ? 4 : playerPart.position === 'SG' ? 3 : 2);
-	    const wingspan = clamp(baseWingspan + randomBetween(-2, 3), height - 1, height + 10);
-	
-	    const weightBaseline =
-	        playerPart.position === 'C' ? 235 :
-	        playerPart.position === 'PF' ? 220 :
-	        playerPart.position === 'SF' ? 205 :
-	        playerPart.position === 'SG' ? 190 :
-	        180;
-	    const weight = clamp(Math.round(weightBaseline + (height - 75) * 4 + randomBetween(-12, 14)), 155, 290);
-	
-	    const athleticismTier =
-	        stars >= 5 ? pickRandom(['A', 'A', 'B']) :
-	        stars === 4 ? pickRandom(['A', 'B', 'B', 'C']) :
-	        stars === 3 ? pickRandom(['B', 'B', 'C', 'C']) :
-	        pickRandom(ATHLETICISM_TIERS);
-	
-	    const coachability = clamp(Math.round(randomBetween(35, 95) + (athleticismTier === 'A' ? -5 : 0) + (archetype === 'ProcessTrustor' ? 10 : 0)), 0, 100);
-	    const durability = clamp(Math.round(randomBetween(45, 95) + (coachability * 0.1)), 0, 100);
-	    const injuryRisk = clamp(100 - durability + randomBetween(-6, 12), 0, 100);
-	
-	    const baseTagPool = PLAY_STYLE_TAGS_BY_POSITION[playerPart.position] || ['high motor', 'tough shot making', 'connector'];
-	    const tagCount = clamp(2 + (stars >= 4 ? 1 : 0) + (Math.random() < 0.25 ? 1 : 0), 2, 4);
-        const playStyleHint = (() => {
-            const style = playerPart.playStyleIdentity;
-            if (style === 'PacePusher') return 'pace pusher';
-            if (style === 'FloorGeneral') return 'floor general';
-            if (style === '3PointBomber') return '3PT sniper';
-            if (style === 'RimPressure') return playerPart.position === 'C' ? 'lob threat' : 'slasher';
-            if (style === 'ShotCreator') return 'shot creator';
-            if (style === '3AndD') return 'two-way wing';
-            if (style === 'DefensiveAnchor') return playerPart.position === 'C' ? 'paint anchor' : 'switchable defender';
-            if (style === 'GlassCleaner') return 'glass cleaner';
-            if (style === 'PostHub') return 'post scorer';
-            if (style === 'StretchBig') return playerPart.position === 'PF' ? 'stretch 4' : '3PT sniper';
-            if (style === 'Connector') return 'connector passer';
-            return null;
-        })();
+    const { nationalRank, positionalRank } = generateApproxRecruitRanks(stars, playerPart.position);
 
-		    let playStyleTags = [...baseTagPool]
-		        .map(value => ({ value, sort: Math.random() }))
-		        .sort((a, b) => a.sort - b.sort)
-		        .slice(0, tagCount)
-		        .map(({ value }) => value);
-        if (playStyleHint && !playStyleTags.includes(playStyleHint)) {
-            if (playStyleTags.length) playStyleTags[0] = playStyleHint;
-            else playStyleTags = [playStyleHint];
+    // --- New Weighted Origin & Elite HS Logic ---
+    const isElite = stars >= 4 || (nationalRank != null && nationalRank <= 150);
+    
+    let finalCity: string;
+    let finalState: string;
+    let finalLat: number;
+    let finalLon: number;
+    let finalSchoolName: string;
+    let finalSchoolType: Recruit['highSchoolType'];
+
+    const eliteHSRoll = Math.random();
+    if (isElite && eliteHSRoll < 0.40) {
+        // Elite recruits have a 40% chance to attend a Top 25 Real High School (National Powerhouses)
+        const school = pickRandom(REAL_HIGH_SCHOOLS);
+        finalCity = school.city;
+        finalState = school.stateCode;
+        finalLat = school.lat;
+        finalLon = school.lon;
+        finalSchoolName = school.name;
+        finalSchoolType = school.type;
+    } else {
+        // Standard Weighted Origin (Based on historical state output)
+        const origin = getRandomRecruitOrigin();
+        finalCity = origin.city;
+        finalState = origin.state;
+        finalLat = origin.lat;
+        finalLon = origin.lon;
+
+        const builtHS = buildHighSchoolName(finalCity, finalState);
+        finalSchoolName = builtHS.name;
+        finalSchoolType = builtHS.type;
+
+        // Coastal Gravity / Elite Prep Logic for non-RealHS elites
+        const isCoastal = ['CA', 'FL', 'NY', 'NJ', 'WA', 'OR', 'MD', 'VA', 'GA', 'NC'].includes(finalState);
+        if (isElite && isCoastal && Math.random() < 0.4) {
+            finalSchoolType = Math.random() < 0.7 ? 'Prep' : 'Private';
+            if (!finalSchoolName.includes('Academy') && !finalSchoolName.includes('Prep') && !finalSchoolName.includes('Catholic')) {
+                finalSchoolName = `${finalCity} ${finalSchoolType === 'Prep' ? 'Prep' : 'Catholic'}`;
+            }
         }
-	
-	    const familyInfluenceNote =
-	        motivations.proximity >= 75 ? 'Family-driven; proximity matters.' :
-	        motivations.proximity <= 25 ? 'Independent; open to moving away.' :
-	        undefined;
-	
-	    const { year, starterPosition, seasonStats, ...recruitData } = playerPart;
-	    const personalityTrait = pickRandom(PROSPECT_PERSONALITIES);
-	    const nilPriority = pickRandom(NIL_PRIORITY_OPTIONS);
+    }
+
+    const hometownState = finalState;
+    const hometownStateCode = normalizeStateCode(hometownState);
+    const region = getRegionForState(hometownState); 
+
+    const archetype: RecruitArchetype = pickRandom(['Mercenary', 'HometownHero', 'ProcessTrustor', 'FameSeeker']);
+    const motivations = generateRecruitMotivations(archetype);
+    const metroArea = Math.random() < 0.25 ? finalCity : undefined;
+    const hypeLevel = clamp(Math.round((stars * 18) + randomBetween(-8, 10) + (nationalRank <= 50 ? 10 : 0)), 0, 100);
+    const favoredCoachStyle = pickRandom(['Offense', 'Defense', 'Player Development', 'Recruiting', 'Tempo', 'Balanced'] as HeadCoachProfile['style'][]);
+
+    const height = playerPart.height || 78;
+    const baseWingspan = height + (playerPart.position === 'C' ? 6 : playerPart.position === 'PF' ? 5 : playerPart.position === 'SF' ? 4 : playerPart.position === 'SG' ? 3 : 2);
+    const wingspan = clamp(baseWingspan + randomBetween(-2, 3), height - 1, height + 10);
+
+    const weightBaseline =
+        playerPart.position === 'C' ? 235 :
+        playerPart.position === 'PF' ? 220 :
+        playerPart.position === 'SF' ? 205 :
+        playerPart.position === 'SG' ? 190 :
+        180;
+    const weight = clamp(Math.round(weightBaseline + (height - 75) * 4 + randomBetween(-12, 14)), 155, 290);
+
+    const athleticismTier: AthleticismTier =
+        stars >= 5 ? pickRandom(['A', 'A', 'B']) :
+        stars === 4 ? pickRandom(['A', 'B', 'B', 'C']) :
+        stars === 3 ? pickRandom(['B', 'B', 'C', 'C']) :
+        pickRandom(ATHLETICISM_TIERS);
+
+    const coachability = clamp(Math.round(randomBetween(35, 95) + (athleticismTier === 'A' ? -5 : 0) + (archetype === 'ProcessTrustor' ? 10 : 0)), 0, 100);
+    const durability = clamp(Math.round(randomBetween(45, 95) + (coachability * 0.1)), 0, 100);
+    const injuryRisk = clamp(100 - durability + randomBetween(-6, 12), 0, 100);
+
+    const baseTagPool = PLAY_STYLE_TAGS_BY_POSITION[playerPart.position] || ['high motor', 'tough shot making', 'connector'];
+    const tagCount = clamp(2 + (stars >= 4 ? 1 : 0) + (Math.random() < 0.25 ? 1 : 0), 2, 4);
+    const playStyleHint = (() => {
+        const style = playerPart.playStyleIdentity;
+        if (style === 'PacePusher') return 'pace pusher';
+        if (style === 'FloorGeneral') return 'floor general';
+        if (style === '3PointBomber') return '3PT sniper';
+        if (style === 'RimPressure') return playerPart.position === 'C' ? 'lob threat' : 'slasher';
+        if (style === 'ShotCreator') return 'shot creator';
+        if (style === '3AndD') return 'two-way wing';
+        if (style === 'DefensiveAnchor') return playerPart.position === 'C' ? 'paint anchor' : 'switchable defender';
+        if (style === 'GlassCleaner') return 'glass cleaner';
+        if (style === 'PostHub') return 'post scorer';
+        if (style === 'StretchBig') return playerPart.position === 'PF' ? 'stretch 4' : '3PT sniper';
+        if (style === 'Connector') return 'connector passer';
+        return null;
+    })();
+
+    let playStyleTags = [...baseTagPool]
+        .map(value => ({ value, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .slice(0, tagCount)
+        .map(({ value }) => value);
+    if (playStyleHint && !playStyleTags.includes(playStyleHint)) {
+        if (playStyleTags.length) playStyleTags[0] = playStyleHint;
+        else playStyleTags = [playStyleHint];
+    }
+
+    const familyInfluenceNote =
+        motivations.proximity >= 75 ? 'Family-driven; proximity matters.' :
+        motivations.proximity <= 25 ? 'Independent; open to moving away.' :
+        undefined;
+
+    const { year, starterPosition, seasonStats, ...recruitData } = playerPart;
+    const personalityTrait = pickRandom(PROSPECT_PERSONALITIES);
+    const nilPriority = pickRandom(NIL_PRIORITY_OPTIONS);
     const preferredProgramAttributes: ProgramPreference = {
         academics: randomBetween(25, 95),
         marketExposure: randomBetween(15, 90),
         communityEngagement: randomBetween(20, 85),
     };
 
-        if (personalityTrait === 'Homebody') {
-            motivations.proximity = clamp(motivations.proximity + randomBetween(12, 24), 0, 100);
-        } else if (personalityTrait === 'Wanderlust') {
-            motivations.proximity = clamp(motivations.proximity - randomBetween(15, 28), 0, 100);
-        } else if (personalityTrait === 'Family Feud') {
-            motivations.relationship = clamp(motivations.relationship - randomBetween(18, 32), 0, 100);
-        } else if (personalityTrait === 'Gym Rat') {
-            motivations.development = clamp(motivations.development + randomBetween(15, 30), 0, 100);
-        }
+    if (personalityTrait === 'Homebody') {
+        motivations.proximity = clamp(motivations.proximity + randomBetween(12, 24), 0, 100);
+    } else if (personalityTrait === 'Wanderlust') {
+        motivations.proximity = clamp(motivations.proximity - randomBetween(15, 28), 0, 100);
+    } else if (personalityTrait === 'Family Feud') {
+        motivations.relationship = clamp(motivations.relationship - randomBetween(18, 32), 0, 100);
+    } else if (personalityTrait === 'Gym Rat') {
+        motivations.development = clamp(motivations.development + randomBetween(15, 30), 0, 100);
+    }
 
-	    // Hard dealbreakers can now be more logical
-	    let dealbreaker: Dealbreaker = pickRandom(['None', 'None', 'None', 'None']);
+    // Hard dealbreakers can now be more logical
+    let dealbreaker: Dealbreaker = pickRandom(['None', 'None', 'None', 'None']);
     if (motivations.proximity > 90) dealbreaker = pickRandom(['Proximity', 'Proximity', 'None']);
     if (motivations.nil > 90) dealbreaker = pickRandom(['NIL', 'NIL', 'None']);
     if (motivations.playingTime > 90) dealbreaker = pickRandom(['PlayingTime', 'None']);
     if (motivations.academics > 90) dealbreaker = pickRandom(['Academics', 'None']);
 
-        const resilience = randomBetween(30, 80);
+    const resilience = randomBetween(30, 80);
 
-        const decisionStyle: RecruitDecisionStyle = (() => {
-            const base =
-                (baseInterest >= 65 || coachability >= 75) ? 'Decisive' :
-                (baseInterest <= 25 || coachability <= 45) ? 'Indecisive' :
-                'Balanced';
-            if (resilience >= 70 && base !== 'Indecisive') return 'Decisive';
-            if (resilience <= 38 && base !== 'Decisive') return 'Indecisive';
-            return base;
-        })();
+    const decisionStyle: RecruitDecisionStyle = (() => {
+        const base =
+            (baseInterest >= 65 || coachability >= 75) ? 'Decisive' :
+            (baseInterest <= 25 || coachability <= 45) ? 'Indecisive' :
+            'Balanced';
+        if (resilience >= 70 && base !== 'Indecisive') return 'Decisive';
+        if (resilience <= 38 && base !== 'Decisive') return 'Indecisive';
+        return base;
+    })();
 
-        const commitmentStyle: RecruitCommitmentStyle = (() => {
-            if (archetype === 'FameSeeker' || motivations.exposure >= 85) return 'FrontRunner';
-            if (archetype === 'HometownHero' && motivations.proximity >= 80) return 'Underdog';
-            if (motivations.playingTime >= 85 && motivations.exposure <= 55) return 'Underdog';
-            return 'Balanced';
-        })();
+    const commitmentStyle: RecruitCommitmentStyle = (() => {
+        if (archetype === 'FameSeeker' || motivations.exposure >= 85) return 'FrontRunner';
+        if (archetype === 'HometownHero' && motivations.proximity >= 80) return 'Underdog';
+        if (motivations.playingTime >= 85 && motivations.exposure <= 55) return 'Underdog';
+        return 'Balanced';
+    })();
 
-        const fitStrictness = clamp(
-            Math.round(
-                40 +
-                Math.max(motivations.proximity, motivations.playingTime, motivations.nil, motivations.exposure, motivations.academics) * 0.45 -
-                Math.min(motivations.proximity, motivations.playingTime, motivations.nil, motivations.exposure, motivations.academics) * 0.15 +
-                (dealbreaker !== 'None' ? 12 : 0) +
-                (decisionStyle === 'Decisive' ? 6 : decisionStyle === 'Indecisive' ? -6 : 0) +
-                randomBetween(-10, 10)
-            ),
-            0,
-            100
-        );
+    const fitStrictness = clamp(
+        Math.round(
+            40 +
+            Math.max(motivations.proximity, motivations.playingTime, motivations.nil, motivations.exposure, motivations.academics) * 0.45 -
+            Math.min(motivations.proximity, motivations.playingTime, motivations.nil, motivations.exposure, motivations.academics) * 0.15 +
+            (dealbreaker !== 'None' ? 12 : 0) +
+            (decisionStyle === 'Decisive' ? 6 : decisionStyle === 'Indecisive' ? -6 : 0) +
+            randomBetween(-10, 10)
+        ),
+        0,
+        100
+    );
 
-	    return {
-	        ...recruitData,
-	        verbalCommitment: null,
-            isSigned: false,
-            verbalLevel: 'NONE',
-            lockStrength: 0,
-            verbalDay: undefined,
-            activeOfferCount: 0,
-	        userHasOffered: false,
-	        cpuOffers: [],
-	        interest: baseInterest,
-	        stars,
-	        declinedOffers: [],
-	        isTargeted: false,
-	        personalityTrait,
-	        nilPriority,
-	        preferredProgramAttributes,
-	        archetype,
-	        hometownCity,
-	        hometownState,
-            hometownLat: realHighSchool?.lat ?? anchor?.lat,
-            hometownLon: realHighSchool?.lon ?? anchor?.lon,
-	        highSchoolName: highSchool.name,
-	        highSchoolType: highSchool.type,
-	        region,
-	        metroArea,
-	        nationalRank,
-	        positionalRank,
-	        rankSource: pickRandom(['247Sports', 'Rivals', 'ESPN', 'On3']),
-	        playStyleTags,
-	        wingspan,
-	        weight,
-	        athleticismTier,
-	        injuryRisk,
-	        durability,
-	        coachability,
-	        hypeLevel,
-	        favoredCoachStyle,
-	        familyInfluenceNote,
-	        offerHistory: [],
-	        visitHistory: [],
-	        motivations,
-	        teamMomentum: {},
-	        recruitmentStage: 'Open',
-	        relationships: [],
-	        dealbreaker,
-	        visitStatus: 'None',
-	        homeState: hometownState,
-	        state: hometownState,
-	        softCommitment: false,
-	        resilience,
-            decisionStyle,
-            commitmentStyle,
-            fitStrictness,
-            recruitingEvents: [],
-	    };
-	};
+    return {
+        ...recruitData,
+        verbalCommitment: null,
+        isSigned: false,
+        verbalLevel: 'NONE',
+        lockStrength: 0,
+        verbalDay: undefined,
+        activeOfferCount: 0,
+        userHasOffered: false,
+        cpuOffers: [],
+        interest: baseInterest,
+        stars,
+        declinedOffers: [],
+        isTargeted: false,
+        personalityTrait,
+        nilPriority,
+        preferredProgramAttributes,
+        archetype,
+        hometownCity: finalCity,
+        hometownState: finalState,
+        hometownLat: finalLat,
+        hometownLon: finalLon,
+        highSchoolName: finalSchoolName,
+        highSchoolType: finalSchoolType,
+        region,
+        metroArea,
+        nationalRank,
+        positionalRank,
+        rankSource: pickRandom(['247Sports', 'Rivals', 'ESPN', 'On3']),
+        playStyleTags,
+        wingspan,
+        weight,
+        athleticismTier,
+        injuryRisk,
+        durability,
+        coachability,
+        hypeLevel,
+        favoredCoachStyle,
+        familyInfluenceNote,
+        offerHistory: [],
+        visitHistory: [],
+        motivations,
+        teamMomentum: {},
+        recruitmentStage: 'Open',
+        relationships: [],
+        dealbreaker,
+        visitStatus: 'None',
+        homeState: finalState,
+        state: finalState,
+        softCommitment: false,
+        resilience,
+        decisionStyle,
+        commitmentStyle,
+        fitStrictness,
+        recruitingEvents: [],
+    };
+};
 
 const INTERNATIONAL_TRAITS = [
     'crafty shot creation', 'NBA range', 'plus positional size', 'elite feel for the game',
@@ -4716,6 +4783,90 @@ const stableIntBetween = (key: string, min: number, max: number): number => {
     return min + (stableHash32(key) % range);
 };
 
+export const calculateStrategicBestFit = (recruit: Recruit, team: Team): { pitch: OfferPitchType; score: number; reason: string } => {
+    const motivations = recruit.motivations || {
+        proximity: 50, playingTime: 50, nil: 50, exposure: 50, relationship: 50, development: 50, academics: 50
+    };
+
+    const estDistanceMiles = estimateRecruitDistanceMilesToTeam(recruit, team);
+    const needsData = calculateTeamNeedsData(team);
+    const positionNeedFactor = needsData[recruit.position] || 0;
+
+    const ratings: Record<string, number> = {
+        proximity: clamp(100 - Math.round(estDistanceMiles / 10), 0, 100),
+        playingTime: clamp(50 + positionNeedFactor * 10, 0, 100),
+        nil: clamp((team.nilBudget ?? 500000) / 25000 + getWealthRecruitingBonus(team) * 2, 0, 100),
+        exposure: clamp((team.recruitingPrestige ?? team.prestige ?? 50) + getTeamMarketScore(team) * 0.2, 0, 100),
+        academics: getTeamAcademicScore(team),
+        relationship: clamp(50 + (team.headCoach?.reputation ?? 50) * 0.5, 0, 100),
+        development: getTeamDevelopmentScore(team)
+    };
+
+    const pitchOptions: { value: OfferPitchType; key: keyof RecruitMotivation; label: string }[] = [
+        { value: 'LocalAngle', key: 'proximity', label: 'Proximity' },
+        { value: 'PlayingTimePromise', key: 'playingTime', label: 'Playing Time' },
+        { value: 'NILHeavy', key: 'nil', label: 'NIL' },
+        { value: 'EarlyPush', key: 'exposure', label: 'Exposure' },
+        { value: 'AcademicPitch', key: 'academics', label: 'Academics' },
+        { value: 'Standard', key: 'relationship', label: 'Relationship' }
+    ];
+
+    let bestOption = { pitch: 'Standard' as OfferPitchType, score: -1, reason: '' };
+    const leverageThreshold = 70;
+
+    // Filter by dealbreaker first
+    if (recruit.dealbreaker && recruit.dealbreaker !== 'None') {
+        const dbKeyMap: Record<string, keyof RecruitMotivation> = {
+            'Proximity': 'proximity',
+            'NIL': 'nil',
+            'PlayingTime': 'playingTime',
+            'Academics': 'academics'
+        };
+        const dbKey = dbKeyMap[recruit.dealbreaker];
+        if (dbKey && ratings[dbKey] < leverageThreshold) {
+            // Counter-Pitch Logic: Find the strongest available category
+            const counterOptions = pitchOptions.filter(o => o.key !== dbKey);
+            let bestCounter = { pitch: 'Standard' as OfferPitchType, score: -1, label: '' };
+            
+            counterOptions.forEach(opt => {
+                const leverage = (motivations[opt.key] / 100) * ratings[opt.key];
+                if (leverage > bestCounter.score) {
+                    bestCounter = { pitch: opt.value, score: leverage, label: opt.label };
+                }
+            });
+
+            return {
+                pitch: bestCounter.pitch,
+                score: bestCounter.score,
+                reason: `Even though he prioritizes ${recruit.dealbreaker}, your ${recruit.dealbreaker} rating is too low to win there. Your Best Fit is actually ${bestCounter.label}, where you have a ${Math.round(ratings[bestCounter.pitch === 'Standard' ? 'relationship' : (pitchOptions.find(p => p.value === bestCounter.pitch)?.key || 'relationship')])} rating and he has a ${Math.round(motivations[bestCounter.pitch === 'Standard' ? 'relationship' : (pitchOptions.find(p => p.value === bestCounter.pitch)?.key || 'relationship')])} weight, giving you the most actual leverage.`
+            };
+        }
+    }
+
+    pitchOptions.forEach(opt => {
+        const recruitWeight = motivations[opt.key];
+        const schoolRating = ratings[opt.key];
+        
+        // Stop Mirroring: Ignore "False Fits" where school rating < 70%
+        if (schoolRating < leverageThreshold) return;
+
+        const leverage = (recruitWeight / 100) * schoolRating;
+        if (leverage > bestOption.score) {
+            bestOption = { 
+                pitch: opt.value, 
+                score: leverage, 
+                reason: `Your competitive advantage in ${opt.label} (${Math.round(schoolRating)} rating) aligns perfectly with his ${Math.round(recruitWeight)} weight, creating a Maximum Competitive Advantage.` 
+            };
+        }
+    });
+
+    if (bestOption.score === -1) {
+        return { pitch: 'Standard', score: 0, reason: 'No category meets the 70% threshold for a "Best Fit". Lead with a Standard pitch to build relationships.' };
+    }
+
+    return bestOption;
+};
+
 const stableFloatBetween = (key: string, min: number, max: number): number => {
     const u = stableHash32(key) / 0xffffffff; // 0..1
     return min + (max - min) * u;
@@ -5034,36 +5185,36 @@ const getRecruitOriginStateCode = (recruit: Recruit): string => {
 };
 
 export const estimateRecruitDistanceMilesToTeam = (recruit: Recruit, team: Team): number => {
+    // 1. Precise Coordinate Logic (Haversine)
+    let rLat = recruit.hometownLat ?? (recruit as any).coordinates?.lat ?? (recruit as any).lat;
+    let rLon = recruit.hometownLon ?? (recruit as any).coordinates?.lng ?? (recruit as any).lon;
+
+    // Healing logic for legacy data: if coords are missing, try to find them
+    if (typeof rLat !== 'number' || typeof rLon !== 'number') {
+        const nearest = findNearestRealCity(undefined, undefined, recruit.hometownCity, recruit.hometownState || recruit.homeState);
+        rLat = nearest.lat;
+        rLon = nearest.lon;
+    }
+    // Healing logic for team location: check SCHOOL_LOCATIONS by name, then normalize state code for STATE_CENTERS
+    const schoolLoc = SCHOOL_LOCATIONS[team.name];
+    const normalizedTeamState = normalizeStateCode(team.state || '');
+    const tLat = team.location?.lat ?? schoolLoc?.lat ?? (team as any).lat ?? STATE_CENTERS[normalizedTeamState]?.lat;
+    const tLon = team.location?.lon ?? schoolLoc?.lon ?? (team as any).lon ?? STATE_CENTERS[normalizedTeamState]?.lon;
+
+    if (typeof tLat === 'number' && typeof tLon === 'number' && typeof rLat === 'number' && typeof rLon === 'number') {
+        const dist = calculateHaversineDistance(
+            rLat, 
+            rLon, 
+            tLat, 
+            tLon
+        );
+        return Math.round(dist);
+    }
+
+    // 2. Absolute Fallback (State-to-State)
     const originState = getRecruitOriginStateCode(recruit);
     const teamState = resolveTeamStateCode(team);
-    const isSameState = !!teamState && originState === teamState;
-
-    // If we have precise team location, use it for better accuracy.
-    // When we don't have recruit coordinates, generate a stable "pseudo home" coordinate per recruit+state
-    // so in-state distances are consistent across different schools.
-    if (team.location) {
-        const recruitCoords =
-            (Number.isFinite(recruit.hometownLat) && Number.isFinite(recruit.hometownLon)
-                ? { lat: recruit.hometownLat as number, lon: recruit.hometownLon as number }
-                : null) ||
-            pickPseudoHomeCoordsForState(originState, `${recruit.id}:${originState}`) ||
-            STATE_CAPITAL_COORDS[originState] ||
-            null;
-
-        if (recruitCoords) {
-            const crow = haversineMiles(recruitCoords, team.location);
-            const base = crow * roadMultiplierFromCrowMiles(crow, isSameState);
-            const jitter = stableIntBetween(`${recruit.id}:${team.name}:jit`, -12, 12);
-            const min = isSameState ? 8 : 30;
-            return clamp(Math.round(base + jitter), min, 3200);
-        }
-    }
-
-    if (teamState) {
-        return estimateDistanceMiles(originState, teamState, `${recruit.id}:${team.name}`);
-    }
-
-    return estimateDistanceMiles(originState, team.state, `${recruit.id}:${team.name}`);
+    return estimateDistanceMiles(originState, teamState || team.state, `${recruit.id}:${team.name}`);
 };
 
 const getPlayerHomeStateCode = (player: Player): string => {
@@ -5710,7 +5861,7 @@ export const processRecruitingWeek = (
     options?: { skipCpuActions?: boolean; startDate?: string; useDailyCommitments?: boolean }
 ): { updatedRecruits: Recruit[], updatedContactsMadeThisWeek: number } => {
     let currentContactsMade = contactsMadeThisWeek;
-    let updatedRecruits = JSON.parse(JSON.stringify(recruits));
+    let updatedRecruits: Recruit[] = JSON.parse(JSON.stringify(recruits));
     const teamsByName = new Map(teams.map(t => [t.name, t]));
     const userTeam = teams.find(t => t.isUserTeam);
     const recruitsByIdIndex = new Map(updatedRecruits.map((r: Recruit) => [r.id, r]));
@@ -5761,6 +5912,69 @@ export const processRecruitingWeek = (
                 r.interest = normalizeInterest(r.interest + swing);
             }
         }
+    });
+
+    // New: Active Recruitment Pruning (Anti-Hoarding Logic)
+    updatedRecruits.forEach((r: Recruit) => {
+        if (r.isSigned || r.verbalCommitment) {
+            r.shortlistHistory = {};
+            return;
+        }
+
+        const offeringTeams = teams.filter(t => (r.cpuOffers || []).includes(t.name) || (t.isUserTeam && r.userHasOffered));
+        if (offeringTeams.length === 0) {
+            r.shortlistHistory = {};
+            return;
+        }
+
+        const offerScores: RecruitOfferScore[] = offeringTeams.map(t => ({
+            name: t.name,
+            score: calculateRecruitInterestScore(r, t, { gameInSeason: week, isSigningPeriod: signingEnabled }, userCoachSkills)
+        }));
+
+        const { shortlist } = buildRecruitOfferShortlist(offerScores, { 
+            min: 3, 
+            max: 6, 
+            leaderWindow: 10, 
+            temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) 
+        });
+        const shortlistTeamNames = new Set(shortlist.map(s => s.name));
+
+        if (!r.shortlistHistory) r.shortlistHistory = {};
+
+        const sortedScores = [...offerScores].sort((a, b) => b.score - a.score);
+        const leaderName = sortedScores[0]?.name;
+
+        offeringTeams.forEach(t => {
+            if (shortlistTeamNames.has(t.name)) {
+                // If weekly sim, a week is 7 days. If daily sim (signing period), it's 1 day.
+                const increment = options?.useDailyCommitments ? 1 : 7;
+                r.shortlistHistory![t.name] = (r.shortlistHistory![t.name] ?? 0) + increment;
+            } else {
+                r.shortlistHistory![t.name] = 0;
+            }
+
+            if (r.shortlistHistory![t.name] >= 4 && t.name !== leaderName) {
+                if (t.isUserTeam) {
+                    r.userHasOffered = false;
+                } else {
+                    r.cpuOffers = (r.cpuOffers || []).filter(name => name !== t.name);
+                }
+                if (!r.declinedOffers) r.declinedOffers = [];
+                if (!r.declinedOffers.includes(t.name)) r.declinedOffers.push(t.name);
+                
+                if (!r.offerHistory) r.offerHistory = [];
+                for (let i = r.offerHistory.length - 1; i >= 0; i--) {
+                    if (r.offerHistory[i].teamName === t.name && !r.offerHistory[i].revoked) {
+                        r.offerHistory[i].revoked = true;
+                        break;
+                    }
+                }
+
+                r.lastRecruitingNews = `${r.name} has formally declined an offer from ${t.name} after being on their shortlist for ${r.shortlistHistory![t.name]} days without reaching leader status.`;
+                r.shortlistHistory![t.name] = 0;
+            }
+        });
     });
 
     if (userTeam) {
@@ -7148,7 +7362,7 @@ export const processDraft = (
             }; // Fallback
 
             const player = pick.source === 'NCAA'
-                ? adjustRookieForNBA(basePlayer)
+                ? adjustRookieForNBA(basePlayer as Player)
                 : basePlayer;
             
             return {
@@ -9450,7 +9664,6 @@ export const runSimulationForWeek = (
         state.contactsMadeThisWeek,
         getContactPoints(state.userTeam),
         userCoachSkills,
-        userCoachSkills,
         { 
             skipCpuActions: (state.recruitingCadence ?? 'weekly') === 'daily',
             startDate: state.currentDate,
@@ -10772,6 +10985,10 @@ const processRecruitingDayActions = (
     seasonStartISO: string,
     userCoachSkills?: string[]
 ): Recruit[] => {
+    const early = recruitingWeek <= 4;
+    const mid = recruitingWeek > 4 && recruitingWeek <= 8;
+    const late = recruitingWeek > 8;
+
     const updatedRecruits = JSON.parse(JSON.stringify(recruits)) as Recruit[];
     const teamsByName = new Map(teams.map(t => [t.name, t]));
     const recruitsById = new Map(updatedRecruits.map(r => [r.id, r]));
@@ -10857,11 +11074,77 @@ const processRecruitingDayActions = (
         });
     });
 
+    // 1.5. Active Recruitment Pruning (Anti-Hoarding Logic)
+    updatedRecruits.forEach((r: Recruit) => {
+        if (r.isSigned || r.verbalCommitment) {
+            r.shortlistHistory = {};
+            return;
+        }
+
+        // Get all active offers
+        const offeringTeams = teams.filter(t => (r.cpuOffers || []).includes(t.name) || (t.isUserTeam && r.userHasOffered));
+        if (offeringTeams.length === 0) {
+            r.shortlistHistory = {};
+            return;
+        }
+
+        // Calculate interest scores for all offering teams
+        const offerScores: RecruitOfferScore[] = offeringTeams.map(t => ({
+            name: t.name,
+            score: calculateRecruitInterestScore(r, t, { gameInSeason: recruitingWeek, isSigningPeriod: late }, userCoachSkills)
+        }));
+
+        // Determine shortlist
+        const { shortlist } = buildRecruitOfferShortlist(offerScores, { 
+            min: 3, 
+            max: 6, 
+            leaderWindow: 10, 
+            temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(r) 
+        });
+        const shortlistTeamNames = new Set(shortlist.map(s => s.name));
+
+        if (!r.shortlistHistory) r.shortlistHistory = {};
+
+        // Find the leader
+        const sortedScores = [...offerScores].sort((a, b) => b.score - a.score);
+        const leaderName = sortedScores[0]?.name;
+
+        offeringTeams.forEach(t => {
+            if (shortlistTeamNames.has(t.name)) {
+                r.shortlistHistory![t.name] = (r.shortlistHistory![t.name] ?? 0) + 1;
+            } else {
+                r.shortlistHistory![t.name] = 0;
+            }
+
+            // The 4-Day Rule: If on shortlist for 4 days and NOT the leader, decline.
+            if (r.shortlistHistory![t.name] >= 4 && t.name !== leaderName) {
+                // Formal Decline
+                if (t.isUserTeam) {
+                    r.userHasOffered = false;
+                } else {
+                    r.cpuOffers = (r.cpuOffers || []).filter(name => name !== t.name);
+                }
+                if (!r.declinedOffers) r.declinedOffers = [];
+                if (!r.declinedOffers.includes(t.name)) r.declinedOffers.push(t.name);
+                
+                // Update history
+                if (!r.offerHistory) r.offerHistory = [];
+                for (let i = r.offerHistory.length - 1; i >= 0; i--) {
+                    if (r.offerHistory[i].teamName === t.name && !r.offerHistory[i].revoked) {
+                        r.offerHistory[i].revoked = true;
+                        break;
+                    }
+                }
+
+                r.lastRecruitingNews = `${r.name} has formally declined an offer from ${t.name} after being on their shortlist for 4 days without reaching leader status.`;
+                r.shortlistHistory![t.name] = 0; // Reset
+            }
+        });
+    });
+
     const sortedRecruits = [...updatedRecruits].sort((a, b) => (b.overall + b.potential) - (a.overall + a.potential));
 
-    const early = recruitingWeek <= 4;
-    const mid = recruitingWeek > 4 && recruitingWeek <= 8;
-    const late = recruitingWeek > 8;
+
 
     const cpuTeams = [...teams]
         .filter(t => !t.isUserTeam)

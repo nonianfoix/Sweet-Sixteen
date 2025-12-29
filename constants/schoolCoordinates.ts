@@ -138,3 +138,16 @@ export const SCHOOL_LOCATIONS: Record<string, { lat: number; lon: number }> = {
     'Toledo': { lat: 41.6578, lon: -83.6136 },
     'Western Michigan': { lat: 42.2831, lon: -85.6139 },
 };
+
+export const BASKETBALL_HUBS: Record<string, { lat: number; lon: number; city: string; state: string }> = {
+    'NYC': { lat: 40.7128, lon: -74.0060, city: 'New York', state: 'NY' },
+    'LA': { lat: 34.0522, lon: -118.2437, city: 'Los Angeles', state: 'CA' },
+    'CHI': { lat: 41.8781, lon: -87.6298, city: 'Chicago', state: 'IL' },
+    'ATL': { lat: 33.7490, lon: -84.3880, city: 'Atlanta', state: 'GA' },
+    'DMV': { lat: 38.9072, lon: -77.0369, city: 'Washington', state: 'DC' },
+    'DFW': { lat: 32.7767, lon: -96.7970, city: 'Dallas', state: 'TX' },
+    'HOU': { lat: 29.7604, lon: -95.3698, city: 'Houston', state: 'TX' },
+    'PHI': { lat: 39.9526, lon: -75.1652, city: 'Philadelphia', state: 'PA' },
+    'SEA': { lat: 47.6062, lon: -122.3321, city: 'Seattle', state: 'WA' },
+    'MIA': { lat: 25.7617, lon: -80.1918, city: 'Miami', state: 'FL' },
+};

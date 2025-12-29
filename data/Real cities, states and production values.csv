@@ -1,0 +1,71 @@
+State,Talent Tier,City,Latitude,Longitude
+CA,Tier 1,Los Angeles,34.0522,-118.2437
+CA,Tier 1,Oakland,37.8044,-122.2711
+CA,Tier 1,San Diego,32.7157,-117.1611
+CA,Tier 1,Sacramento,38.5816,-121.4944
+CA,Tier 1,Compton,33.8958,-118.2201
+NY,Tier 1,New York City,40.7128,-74.006
+NY,Tier 1,Brooklyn,40.6782,-73.9442
+NY,Tier 1,Buffalo,42.8864,-78.8784
+NY,Tier 1,Rochester,43.1566,-77.6088
+NY,Tier 1,Mount Vernon,40.9126,-73.8371
+DC,Tier 1,Washington,38.9072,-77.0369
+MD,Tier 1,Baltimore,39.2904,-76.6122
+MD,Tier 1,Hyattsville,38.9559,-76.9519
+IL,Tier 1,Chicago,41.8781,-87.6298
+IL,Tier 1,Peoria,40.6936,-89.589
+OH,Tier 1,Cleveland,41.4993,-81.6944
+OH,Tier 1,Cincinnati,39.1031,-84.512
+OH,Tier 1,Akron,41.0814,-81.519
+TX,Tier 1,Houston,29.7604,-95.3698
+TX,Tier 1,Dallas,32.7767,-96.797
+IN,Tier 1,Indianapolis,39.7684,-86.1581
+IN,Tier 1,Gary,41.5934,-87.3464
+NJ,Tier 1,Newark,40.7357,-74.1724
+NJ,Tier 1,Camden,39.9259,-75.1196
+GA,Tier 1,Atlanta,33.749,-84.388
+FL,Tier 1,Miami,25.7617,-80.1918
+FL,Tier 1,Orlando,28.5383,-81.3792
+NC,Tier 1,Charlotte,35.2271,-80.8431
+NC,Tier 1,Durham,35.994,-78.8986
+PA,Tier 1,Philadelphia,39.9526,-75.1652
+PA,Tier 1,Pittsburgh,40.4406,-79.9959
+MI,Tier 1,Detroit,42.3314,-83.0458
+MI,Tier 1,Flint,43.0125,-83.6875
+VA,Tier 2,Norfolk,36.8508,-76.2859
+VA,Tier 2,Richmond,37.5407,-77.436
+WA,Tier 2,Seattle,47.6062,-122.3321
+AZ,Tier 2,Phoenix,33.4484,-112.074
+CT,Tier 2,New Haven,41.3083,-72.9279
+CT,Tier 2,Hartford,41.7637,-72.6851
+KY,Tier 2,Louisville,38.2527,-85.7585
+MO,Tier 2,St. Louis,38.627,-90.1994
+TN,Tier 2,Memphis,35.1495,-90.049
+LA,Tier 2,New Orleans,29.9511,-90.0715
+OR,Tier 2,Portland,45.5152,-122.6784
+WI,Tier 2,Milwaukee,43.0389,-87.9065
+MN,Tier 2,Minneapolis,44.9778,-93.265
+AL,Tier 2,Birmingham,33.5186,-86.8104
+OK,Tier 2,Oklahoma City,35.4676,-97.5164
+NV,Tier 2,Las Vegas,36.1716,-115.1391
+UT,Tier 2,Salt Lake City,40.7608,-111.891
+CO,Tier 2,Denver,39.7392,-104.9903
+HI,Tier 3,Honolulu,21.3069,-157.8583
+HI,Tier 3,Hilo,19.7241,-155.0868
+HI,Tier 3,Kailua,21.4022,-157.7394
+AK,Tier 3,Anchorage,61.2181,-149.9003
+MT,Tier 3,Billings,45.7833,-108.5007
+WY,Tier 3,Cheyenne,41.14,-104.8202
+ME,Tier 3,Portland,43.6591,-70.2568
+VT,Tier 3,Burlington,44.4759,-73.2121
+ND,Tier 3,Fargo,46.8772,-96.7898
+SD,Tier 3,Sioux Falls,43.546,-96.7313
+WV,Tier 3,Charleston,38.3498,-81.6326
+NH,Tier 3,Manchester,42.9956,-71.4548
+DE,Tier 3,Wilmington,39.7447,-75.5484
+RI,Tier 3,Providence,41.824,-71.4128
+ID,Tier 3,Boise,43.615,-116.2023
+NE,Tier 3,Omaha,41.2565,-95.9345
+IA,Tier 3,Des Moines,41.5868,-93.625
+KS,Tier 3,Wichita,37.6889,-97.3361
+NM,Tier 3,Albuquerque,35.0844,-106.6504

@@ -1,7 +1,19 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { OfferPitchType, Recruit, RecruitNilPriority, Team, TeamColors } from '../types';
-import { SCHOOL_COLORS } from '../constants';
-import { buildRecruitOfferShortlist, calculateRecruitInterestBreakdown, clamp, getRecruitOfferShareTemperatureMultiplier } from '../services/gameService';
+import type { OfferPitchType, Recruit, RecruitNilPriority, Team, TeamColors, MotivationKey } from '../types';
+import { SCHOOL_COLORS, CONFERENCE_NIL_CAPS, SCHOOL_CONFERENCES, CONFERENCE_STRENGTH } from '../constants';
+import { OFFER_PITCH_OPTIONS, CATEGORY_THEMES, PITCH_IMPACTS } from '../constants/recruiting';
+import { buildRecruitOfferShortlist, calculateRecruitInterestBreakdown, getRecruitOfferShareTemperatureMultiplier, calculateStrategicBestFit } from '../services/gameService';
+import {
+  formatPlayerHeight,
+  formatRecruitPriority,
+  getWhyBadgeTheme,
+  getSchoolLogoUrl,
+  rgbaFromHex,
+  bestTextColor,
+  teamColor,
+  tierAccent,
+  clamp
+} from '../services/utils';
 
 type Props = {
   recruit: Recruit;
@@ -23,191 +35,6 @@ type Props = {
   onScheduleOfficialVisit?: () => void;
   onScout?: () => void;
   onNegativeRecruit?: () => void;
-};
-
-const formatPlayerHeight = (inches: number): string => {
-  const feet = Math.floor(inches / 12);
-  const remaining = inches % 12;
-  return `${feet}'${remaining}"`;
-};
-
-const OFFER_PITCH_OPTIONS: { value: OfferPitchType; label: string; desc: string }[] = [
-  { value: 'Standard', label: 'Standard', desc: 'Balanced pitch.' },
-  { value: 'EarlyPush', label: 'Early Push', desc: 'Press urgency and momentum early.' },
-  { value: 'NILHeavy', label: 'NIL Heavy', desc: 'Lead with NIL opportunities.' },
-  { value: 'PlayingTimePromise', label: 'Playing Time Promise', desc: 'Emphasize role clarity and minutes.' },
-  { value: 'LocalAngle', label: 'Local Angle', desc: 'Family/proximity/hometown focus.' },
-  { value: 'AcademicPitch', label: 'Academic Pitch', desc: 'Sell academics and support systems.' },
-];
-
-const formatRecruitPriority = (priority?: RecruitNilPriority): string => {
-  if (!priority) return '-';
-  if (priority === 'LongTermStability') return 'Long-Term Stability';
-  if (priority === 'DraftStock') return 'Draft Stock';
-  if (priority === 'AcademicSupport') return 'Academic Support';
-  if (priority === 'BrandExposure') return 'Brand Exposure';
-  return priority;
-};
-
-type MotivationKey = 'playingTime' | 'nil' | 'exposure' | 'proximity' | 'development' | 'academics' | 'relationship';
-
-const CATEGORY_THEMES: Record<MotivationKey, { label: string; chipBg: string; chipBorder: string; chipText: string; barFill: string }> = {
-  playingTime: { label: 'Playing Time', chipBg: '#dbeafe', chipBorder: '#2563eb', chipText: '#1e3a8a', barFill: 'linear-gradient(90deg, #60a5fa 0%, #2563eb 100%)' },
-  nil: { label: 'NIL Money', chipBg: '#dcfce7', chipBorder: '#16a34a', chipText: '#14532d', barFill: 'linear-gradient(90deg, #86efac 0%, #16a34a 100%)' },
-  exposure: { label: 'Exposure', chipBg: '#ffedd5', chipBorder: '#f59e0b', chipText: '#92400e', barFill: 'linear-gradient(90deg, #fdba74 0%, #f59e0b 100%)' },
-  proximity: { label: 'Proximity', chipBg: '#ede9fe', chipBorder: '#7c3aed', chipText: '#4c1d95', barFill: 'linear-gradient(90deg, #c4b5fd 0%, #7c3aed 100%)' },
-  development: { label: 'Development', chipBg: '#cffafe', chipBorder: '#06b6d4', chipText: '#164e63', barFill: 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 100%)' },
-  academics: { label: 'Academics', chipBg: '#e0f2fe', chipBorder: '#0ea5e9', chipText: '#0c4a6e', barFill: 'linear-gradient(90deg, #7dd3fc 0%, #0ea5e9 100%)' },
-  relationship: { label: 'Relationships', chipBg: '#ffe4e6', chipBorder: '#e11d48', chipText: '#881337', barFill: 'linear-gradient(90deg, #fda4af 0%, #e11d48 100%)' },
-};
-
-const PITCH_IMPACTS: Record<OfferPitchType, { keys: MotivationKey[]; coef: number }> = {
-  Standard: { keys: [], coef: 0 },
-  EarlyPush: { keys: ['exposure'], coef: 2 },
-  NILHeavy: { keys: ['nil'], coef: 8 },
-  PlayingTimePromise: { keys: ['playingTime'], coef: 7 },
-  LocalAngle: { keys: ['proximity'], coef: 7 },
-  AcademicPitch: { keys: ['academics'], coef: 7 },
-};
-
-const getWhyBadgeTheme = (badge: string): { key: MotivationKey } | null => {
-  const b = (badge || '').toLowerCase();
-  if (b.startsWith('playing time')) return { key: 'playingTime' };
-  if (b.startsWith('nil')) return { key: 'nil' };
-  if (b.startsWith('exposure')) return { key: 'exposure' };
-  if (b.startsWith('proximity')) return { key: 'proximity' };
-  if (b.startsWith('academics')) return { key: 'academics' };
-  if (b.startsWith('relationship')) return { key: 'relationship' };
-  return null;
-};
-
-const SCHOOL_LOGO_MODULES = import.meta.glob('../school logos/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
-const SCHOOL_LOGO_BY_SLUG = Object.fromEntries(
-  Object.entries(SCHOOL_LOGO_MODULES).map(([modulePath, url]) => {
-    const fileName = modulePath.split('/').pop() || '';
-    const slug = fileName.replace(/\.svg$/i, '');
-    return [slug, url];
-  })
-) as Record<string, string>;
-
-const normalizeSchoolTokens = (name: string): string[] => {
-  const raw = (name || '')
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/\./g, '')
-    .replace(/'/g, '')
-    .replace(/[()]/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-  const tokens = raw.length ? raw.split(/\s+/) : [];
-  const normalized = tokens.map(t => {
-    if (t === 'university') return 'u';
-    if (t === 'state') return 'st';
-    if (t === 'saint') return 'st';
-    return t;
-  });
-
-  const merged: string[] = [];
-  for (let i = 0; i < normalized.length; i++) {
-    const token = normalized[i]!;
-    if (token.length === 1) {
-      let combined = token;
-      while (i + 1 < normalized.length && normalized[i + 1]!.length === 1) {
-        combined += normalized[i + 1]!;
-        i++;
-      }
-      merged.push(combined);
-    } else {
-      merged.push(token);
-    }
-  }
-  return merged.filter(Boolean);
-};
-
-const schoolNameToBestSlug = (schoolName: string): string => {
-  const tokens = normalizeSchoolTokens(schoolName);
-  return tokens.join('-');
-};
-
-const getSchoolLogoUrl = (schoolName: string): string | undefined => {
-  if (!schoolName) return undefined;
-
-  const specialCases: Record<string, string> = {
-    Miami: 'miami-fl',
-    'Miami (OH)': 'miami-oh',
-    Albany: 'albany-ny',
-  };
-
-  const direct = specialCases[schoolName];
-  if (direct && SCHOOL_LOGO_BY_SLUG[direct]) return SCHOOL_LOGO_BY_SLUG[direct];
-
-  const slug = schoolNameToBestSlug(schoolName);
-  if (SCHOOL_LOGO_BY_SLUG[slug]) return SCHOOL_LOGO_BY_SLUG[slug];
-
-  const prefixMatches = Object.keys(SCHOOL_LOGO_BY_SLUG)
-    .filter(s => s === slug || s.startsWith(`${slug}-`))
-    .sort((a, b) => a.length - b.length);
-  if (prefixMatches.length) return SCHOOL_LOGO_BY_SLUG[prefixMatches[0]!]!;
-
-  return undefined;
-};
-
-const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
-  const cleaned = hex.replace('#', '').trim();
-  if (cleaned.length === 3) {
-    const r = parseInt(cleaned[0] + cleaned[0], 16);
-    const g = parseInt(cleaned[1] + cleaned[1], 16);
-    const b = parseInt(cleaned[2] + cleaned[2], 16);
-    if ([r, g, b].some(n => Number.isNaN(n))) return null;
-    return { r, g, b };
-  }
-  if (cleaned.length === 6) {
-    const r = parseInt(cleaned.slice(0, 2), 16);
-    const g = parseInt(cleaned.slice(2, 4), 16);
-    const b = parseInt(cleaned.slice(4, 6), 16);
-    if ([r, g, b].some(n => Number.isNaN(n))) return null;
-    return { r, g, b };
-  }
-  return null;
-};
-
-const relativeLuminance = (rgb: { r: number; g: number; b: number }): number => {
-  const toLinear = (v: number) => {
-    const s = v / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  };
-  const r = toLinear(rgb.r);
-  const g = toLinear(rgb.g);
-  const b = toLinear(rgb.b);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-
-const rgbaFromHex = (hex: string, alpha: number): string => {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const clamped = Math.max(0, Math.min(1, alpha));
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamped})`;
-};
-
-const bestTextColor = (bgHex: string): string => {
-  const rgb = hexToRgb(bgHex);
-  if (!rgb) return '#111827';
-  return relativeLuminance(rgb) < 0.35 ? '#ffffff' : '#111827';
-};
-
-const teamColor = (teamName: string, index: number): string => {
-  const palette = ['#2563eb', '#16a34a', '#7c3aed', '#f59e0b', '#dc2626', '#0ea5e9', '#0891b2', '#db2777'];
-  const tc = (SCHOOL_COLORS as Record<string, TeamColors | undefined>)[teamName];
-  const preferred = tc?.primary && tc.primary.toUpperCase() !== '#FFFFFF' ? tc.primary : tc?.secondary;
-  return preferred || palette[index % palette.length]!;
-};
-
-const tierAccent = (tier: string) => {
-  if (tier === 'Leader') return { border: '#22c55e', pillBg: '#dcfce7', pillText: '#166534', pct: '#16a34a' };
-  if (tier === 'In The Mix') return { border: '#3b82f6', pillBg: '#dbeafe', pillText: '#1d4ed8', pct: '#2563eb' };
-  if (tier === 'Chasing') return { border: '#fb923c', pillBg: '#ffedd5', pillText: '#9a3412', pct: '#374151' };
-  return { border: '#9ca3af', pillBg: '#f3f4f6', pillText: '#374151', pct: '#374151' };
 };
 
 export default function RecruitOfferDetailsModal({
@@ -234,6 +61,10 @@ export default function RecruitOfferDetailsModal({
   const teamsByName = useMemo(() => new Map(allTeams.map(t => [t.name, t])), [allTeams]);
   const userTeam = useMemo(() => teamsByName.get(userTeamName) || null, [teamsByName, userTeamName]);
   const userPrestige = (userTeam?.recruitingPrestige ?? userTeam?.prestige ?? 50) as number;
+  const userConference = SCHOOL_CONFERENCES[userTeamName] || 'Independent';
+  const conferenceStrength = CONFERENCE_STRENGTH[userConference] || 'Low';
+  const nilCap = CONFERENCE_NIL_CAPS[conferenceStrength] || 1500000;
+
   const eliteFitFail =
     userPrestige >= 94 &&
     ((recruit.preferredProgramAttributes?.academics ?? 50) < 40 || recruit.personalityTrait === 'Family Feud');
@@ -443,17 +274,12 @@ export default function RecruitOfferDetailsModal({
     academics: recruit.motivations?.academics ?? 50,
   };
 
-  const bestPitchType: OfferPitchType | null = (() => {
-    const candidates = OFFER_PITCH_OPTIONS
-      .map(o => {
-        const i = PITCH_IMPACTS[o.value];
-        if (!i.keys.length) return { value: o.value, score: -1 };
-        const w = i.keys.reduce((sum, k) => sum + motivations[k], 0) / i.keys.length;
-        return { value: o.value, score: w * i.coef };
-      })
-      .sort((a, b) => b.score - a.score);
-    return candidates[0]?.score > 0 ? candidates[0]!.value : null;
-  })();
+  const strategicFit = useMemo(() => {
+    if (!userTeam) return { pitch: 'Standard' as OfferPitchType, score: 0, reason: '' };
+    return calculateStrategicBestFit(recruit, userTeam);
+  }, [recruit, userTeam]);
+
+  const bestPitchType = strategicFit.pitch;
 
   const projectedMomentumPreview = (() => {
     const preview = hoverPitchType ?? pitchType;
@@ -511,7 +337,9 @@ export default function RecruitOfferDetailsModal({
     fontSize: '12px',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.55 : 1,
-    whiteSpace: 'nowrap',
+    whiteSpace: 'normal',
+    textAlign: 'center',
+    lineHeight: '1.2',
   });
 
   const motivationItems = [
@@ -664,23 +492,19 @@ export default function RecruitOfferDetailsModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '12px',
-        backgroundColor: 'rgba(15,23,42,0.80)',
-        backgroundImage:
-          'repeating-linear-gradient(0deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 1px, transparent 1px, transparent 3px)',
+        padding: '8px',
+        backgroundColor: 'rgba(15,23,42,0.85)',
         backdropFilter: 'none',
       }}
       onClick={onClose}
     >
       <div
         style={{
-          width: '100%',
-          maxWidth: 'min(1560px, 98vw)',
-          maxHeight: '96vh',
+          width: '98vw',
+          maxWidth: '98vw',
+          maxHeight: '99vh',
+          height: '98vh',
           background: '#f8fafc',
-          backgroundImage:
-            'linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px), linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px)',
-          backgroundSize: '10px 10px',
           borderRadius: '8px',
           overflow: 'hidden',
           boxShadow: '10px 10px 0 #0f172a',
@@ -693,23 +517,46 @@ export default function RecruitOfferDetailsModal({
         <div style={{ padding: '16px 18px', borderBottom: '4px solid #0f172a', background: '#e2e8f0', position: 'relative' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-start', justifyContent: 'space-between', paddingRight: '48px' }}>
             <div style={{ minWidth: 0, flex: '1 1 560px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', textShadow: '2px 2px 0 rgba(255,255,255,0.55)' }}>
-                  Offers for {recruit.name}
-                </div>
-                {topRecruit ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 900, background: '#86efac', color: '#0f172a', border: '2px solid #0f172a', boxShadow: '2px 2px 0 #0f172a' }}>
-                    Top Recruit
-                  </span>
-                ) : null}
-              </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a', textShadow: '2px 2px 0 rgba(255,255,255,0.55)', lineHeight: '100%' }}>
+                      {recruit.name}
+                    </div>
+                     <span style={{ ...headerStatPillBase, background: '#dbeafe', border: '2px solid #1d4ed8', color: '#1d4ed8' }}>
+                      <span style={headerStatLabel}>Archetype</span>
+                      <span style={headerStatValue}>{recruit.archetype || '-'}</span>
+                    </span>
+                    {topRecruit ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 900, background: '#86efac', color: '#0f172a', border: '2px solid #0f172a', boxShadow: '2px 2px 0 #0f172a' }}>
+                        Top Recruit
+                      </span>
+                    ) : null}
+                    {recruit.draftProjection && recruit.draftProjection !== 'Undrafted' ? (
+                       <span style={{ ...infoPill, background: '#fef08a', borderColor: '#eab308', color: '#854d0e', boxShadow: '2px 2px 0 #ca8a04' }}>
+                          Draft: {recruit.draftProjection}
+                       </span>
+                    ) : null}
+                     {recruit.nbaComparable ? (
+                       <span style={{ ...infoPill, background: '#fce7f3', borderColor: '#db2777', color: '#9d174d' }}>
+                          Comp: {recruit.nbaComparable.name}
+                       </span>
+                    ) : null}
+                  </div>
 
-              {(recruit.hometownCity || recruit.hometownState || recruit.highSchoolName) ? (
-                <div style={{ marginTop: '6px', color: '#6b7280', fontSize: '13px' }}>
-                  {[recruit.hometownCity, recruit.hometownState].filter(Boolean).join(', ')}
-                  {recruit.highSchoolName ? ` - ${recruit.highSchoolName}` : ''}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '13px', fontWeight: 700, flexWrap: 'wrap' }}>
+                    <span>{recruit.position}{recruit.secondaryPosition ? `/${recruit.secondaryPosition}` : ''}</span>
+                    <span>•</span>
+                    <span>
+                         {typeof recruit.height === 'number' ? formatPlayerHeight(recruit.height) : '-'} / {recruit.weight ? `${recruit.weight} lbs` : '-'}
+                         {recruit.wingspan ? ` / WS ${recruit.wingspan}"` : ''}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {[recruit.hometownCity, recruit.hometownState].filter(Boolean).join(', ')}
+                      {recruit.highSchoolName ? ` — ${recruit.highSchoolName}` : ''}
+                    </span>
+                  </div>
                 </div>
-              ) : null}
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
                 {recruit.nationalRank != null ? <span style={infoPill}>Nat #{recruit.nationalRank}</span> : null}
@@ -717,9 +564,7 @@ export default function RecruitOfferDetailsModal({
                 {typeof recruit.overall === 'number' ? <span style={infoPill}>Ovr {recruit.overall}</span> : null}
                 {typeof recruit.potential === 'number' ? <span style={infoPill}>Pot {recruit.potential}</span> : null}
                 {recruit.recruitmentStage ? <span style={stagePill}>Stage {recruit.recruitmentStage}</span> : null}
-                {typeof recruit.height === 'number' ? <span style={infoPill}>Ht {formatPlayerHeight(recruit.height)}</span> : null}
-                {recruit.weight ? <span style={infoPill}>Wt {recruit.weight} lbs</span> : null}
-                {recruit.wingspan ? <span style={infoPill}>WS {recruit.wingspan}&quot;</span> : null}
+                
                 {contactPointsMax > 0 ? (
                   <span
                     style={{ ...infoPill, background: '#e0f2fe', border: '2px solid #0ea5e9', color: '#0c4a6e' }}
@@ -729,6 +574,11 @@ export default function RecruitOfferDetailsModal({
                   </span>
                 ) : null}
                 <span style={{ ...infoPill, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>Interest {Math.round(recruit.interest)}/100</span>
+                {topLeader && topLeader.name === userTeamName && (
+                   <span style={{ ...infoPill, background: '#dcfce7', borderColor: '#16a34a', color: '#166534' }}>
+                     Lead +{leaderDelta?.toFixed(1) ?? '0'}%
+                   </span>
+                )}
                 {recruit.verbalCommitment ? (
                   <span style={{ ...infoPill, background: recruit.isSigned ? '#bbf7d0' : '#fef9c3', border: `2px solid ${recruit.isSigned ? '#16a34a' : '#fde68a'}`, color: recruit.isSigned ? '#14532d' : '#854d0e' }}>
                     {recruit.isSigned ? 'SIGNED' : `Verbal: ${recruit.verbalLevel}`}: {recruit.verbalCommitment}
@@ -736,19 +586,7 @@ export default function RecruitOfferDetailsModal({
                 ) : null}
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', rowGap: '6px', marginTop: '10px' }}>
-                <span style={{ ...headerStatPillBase, background: '#111827', border: '2px solid #111827', color: '#ffffff' }}>
-                  <span style={{ ...headerStatLabel, opacity: 0.85 }}>Stars/Pos</span>
-                  <span style={headerStatValue}>
-                    {'\u2605'.repeat(Math.max(0, Math.min(5, recruit.stars)))} {recruit.position}{recruit.secondaryPosition ? `/${recruit.secondaryPosition}` : ''}
-                  </span>
-                </span>
-
-                <span style={{ ...headerStatPillBase, background: '#dbeafe', border: '2px solid #1d4ed8', color: '#1d4ed8' }}>
-                  <span style={headerStatLabel}>Archetype</span>
-                  <span style={headerStatValue}>{recruit.archetype || '-'}</span>
-                </span>
-
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', rowGap: '6px', marginTop: '8px' }}>
                 <span
                   style={{
                     ...headerStatPillBase,
@@ -766,31 +604,25 @@ export default function RecruitOfferDetailsModal({
                   <span style={headerStatValue}>{recruit.resilience}</span>
                 </span>
 
-                <span style={{ ...headerStatPillBase, background: '#f5f3ff', border: '2px solid #7c3aed', color: '#5b21b6' }}>
-                  <span style={headerStatLabel}>Coach</span>
-                  <span style={headerStatValue}>{recruit.coachability ?? '-'}</span>
-                </span>
-
                 <span style={{ ...headerStatPillBase, background: '#fff7ed', border: '2px solid #f97316', color: '#9a3412' }}>
                   <span style={headerStatLabel}>Hype</span>
                   <span style={headerStatValue}>{recruit.hypeLevel ?? '-'}</span>
                 </span>
 
-                <span
-                  style={{
-                    ...headerStatPillBase,
-                    background: '#fef9c3',
-                    border: '2px solid #ca8a04',
-                    color: '#854d0e',
-                    maxWidth: '260px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                  title={`Top focus (What Matters): ${topFocus.sorted.slice(0, 3).map(s => `${s.label} ${s.value}`).join(' • ')}${recruit.nilPriority ? ` | Career goal: ${formatRecruitPriority(recruit.nilPriority)}` : ''}`}
-                >
-                  <span style={headerStatLabel}>Top Focus</span>
-                  <span style={{ ...headerStatValue, overflow: 'hidden', textOverflow: 'ellipsis' }}>{topFocus.top ? `${topFocus.top.label} (${topFocus.top.value})` : '-'}</span>
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', padding: '4px 8px', background: '#ffffff', border: '2px solid #cbd5e1', borderRadius: '6px', boxShadow: '2px 2px 0 #cbd5e1' }} title="Recruit Priorities">
+                   <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Priorities</div>
+                   <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '18px' }}>
+                      {topFocus.sorted.map(s => {
+                         const theme = CATEGORY_THEMES[s.key as MotivationKey];
+                         const isTop = s.value >= 70;
+                         return (
+                           <div key={s.key} title={`${s.label}: ${s.value}`} style={{ width: '6px', height: '100%', background: '#f1f5f9', borderRadius: '2px', position: 'relative' }}>
+                              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${s.value}%`, background: isTop ? theme.barFill : '#cbd5e1', borderRadius: '1px' }} />
+                           </div>
+                         );
+                      })}
+                   </div>
+                </div>
               </div>
             </div>
 
@@ -826,9 +658,30 @@ export default function RecruitOfferDetailsModal({
           </button>
         </div>
 
-        <div style={{ flex: '1 1 auto', overflowY: 'auto', background: '#f3f4f6', padding: '18px' }}>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 680px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ flex: '1 1 auto', overflow: 'hidden', background: '#f3f4f6', padding: '0' }}>
+          <div style={{ display: 'flex', gap: '0', alignItems: 'stretch', height: '100%' }}>
+            <div style={{ flex: '7 1 0', minWidth: '600px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', height: '100%', padding: '18px' }}>
+
+              {/* THE BOOK: Scouting Report */}
+              <div style={{ ...sectionCard, padding: '16px', background: '#ffffff', borderLeft: '6px solid #4f46e5' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4f46e5' }}>
+                          Scouting Report
+                      </div>
+                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>THE BOOK</div>
+                  </div>
+                  <div style={{ fontSize: '14px', lineHeight: '1.5', color: '#334155', fontWeight: 500 }}>
+                    <span style={{ fontWeight: 800, color: '#0f172a' }}>{recruit.name}</span> is a{' '}
+                    <span style={{ fontWeight: 700 }}>{recruit.overall >= 80 ? 'dominant' : recruit.overall >= 70 ? 'solid' : 'developing'}</span>{' '}
+                    {recruit.archetype?.toLowerCase()} from <span style={{ fontWeight: 700 }}>{recruit.hometownCity}</span>. {' '}
+                    He thrives as a <span style={{ fontWeight: 700, color: '#4f46e5' }}>{recruit.playStyleTags?.[0] ?? 'prospect'}</span>, {' '}
+                    with <span style={{ fontWeight: 700 }}>{recruit.stats.insideScoring > 70 ? 'elite finishing' : recruit.stats.outsideScoring > 70 ? 'knockdown shooting' : recruit.stats.playmaking > 70 ? 'superior vision' : 'balanced skills'}</span>. {' '}
+                    {recruit.familyInfluenceNote ? <span>{recruit.familyInfluenceNote} </span> : ''}
+                    Prone to {recruit.dealbreaker !== 'None' ? 'considering ' + recruit.dealbreaker.toLowerCase() + ' heavily' : 'being flexible'}.
+                  </div>
+              </div>
+
+
               <div style={{ ...sectionCard, padding: '14px 14px' }}>
                 {eliteFitFail ? (
                   <div
@@ -850,7 +703,58 @@ export default function RecruitOfferDetailsModal({
                 ) : null}
 
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+                  {/* RECRUITING BATTLE */}
+                  <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+                     <div style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748b', marginBottom: '8px' }}>
+                          Recruiting Battle
+                      </div>
+                      
+                      {topLeader ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {/* LEADER */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '10px', border: `2px solid ${teamColor(topLeader.name, 0)}` }}>
+                                     1
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800 }}>
+                                          <span>{topLeader.name}</span>
+                                          <span>{Math.round(topLeader.interestPct)}%</span>
+                                      </div>
+                                      <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', marginTop: '4px', overflow: 'hidden' }}>
+                                          <div style={{ width: `${topLeader.interestPct}%`, height: '100%', background: teamColor(topLeader.name, 0) }} />
+                                      </div>
+                                  </div>
+                              </div>
+                              {/* RUNNER UP */}
+                              {topRunnerUp ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', opacity: 0.85 }}>
+                                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '10px', border: `2px solid ${teamColor(topRunnerUp.name, 1)}` }}>
+                                         2
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700 }}>
+                                              <span>{topRunnerUp.name}</span>
+                                              <span>{Math.round(topRunnerUp.interestPct)}%</span>
+                                          </div>
+                                          <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', marginTop: '4px', overflow: 'hidden' }}>
+                                              <div style={{ width: `${topRunnerUp.interestPct}%`, height: '100%', background: teamColor(topRunnerUp.name, 1) }} />
+                                          </div>
+                                      </div>
+                                  </div>
+                              ) : null}
+                          </div>
+                      ) : (
+                          <div style={{ fontSize: '13px', fontStyle: 'italic', color: '#94a3b8' }}>No offers yet</div>
+                      )}
+
+
+                  </div>
+
                   <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                     <div style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748b', marginBottom: '8px' }}>
+                          Lock Status
+                      </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#374151', marginBottom: '4px' }}>
                       <span style={{ fontWeight: 900 }}>Lock Strength</span>
                       <span style={{ color: '#6b7280', fontWeight: 900 }}>{Math.round((recruit.lockStrength || 0) * 100)}%</span>
@@ -858,85 +762,12 @@ export default function RecruitOfferDetailsModal({
                     <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
                       <div style={{ width: `${clamp(Math.round((recruit.lockStrength || 0) * 100), 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #60a5fa 0%, #2563eb 100%)' }} />
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
-                      {recruit.verbalCommitment ? (
-                        <span style={{ ...infoPill, background: '#fef9c3', border: '2px solid #fde68a', color: '#854d0e' }}>
-                          Verbal: {recruit.verbalLevel} @ {recruit.verbalCommitment}
-                        </span>
-                      ) : (
-                        <span style={{ ...infoPill, background: '#f3f4f6', border: '2px solid #6b7280', color: '#374151' }}>
-                          Verbal: NONE
-                        </span>
-                      )}
-                      {recruit.hometownAnchorProgram ? <span style={infoPill}>Anchor: {recruit.hometownAnchorProgram}</span> : null}
-                    </div>
                   </div>
 
-                  <div style={{ flex: '1 1 360px', minWidth: 0 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      {[
-                        { label: 'Archetype', value: recruit.archetype || '-' },
-                        { label: 'Dealbreaker', value: recruit.dealbreaker || '-' },
-                        { label: 'Personality', value: recruit.personalityTrait || '-' },
-                        { label: 'Academics', value: (recruit.preferredProgramAttributes?.academics ?? '-') as any },
-                      ].map(item => (
-                        <div
-                          key={item.label}
-                          style={{
-                            padding: '10px 10px',
-                            borderRadius: '10px',
-                            border: '2px solid #0f172a',
-                            background: '#ffffff',
-                            boxShadow: '2px 2px 0 #0f172a',
-                          }}
-                        >
-                          <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 900 }}>
-                            {item.label}
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#111827', fontWeight: 900, marginTop: '4px' }}>{item.value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </div>
 
-              {recruit.lastRecruitingNews ? (
-                <div style={{ ...sectionCard, padding: '12px 14px' }}>
-                  <div style={{ fontSize: '13px', color: '#111827' }}>{recruit.lastRecruitingNews}</div>
-                </div>
-              ) : null}
-
-              <div style={{ ...sectionCard, padding: '14px 14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', fontSize: '13px' }}>
-                  <div>
-                    <span style={{ fontWeight: 900, color: '#111827' }}>Leader:</span>{' '}
-                    <span style={{ color: '#374151' }}>{topLeader ? `${topLeader.name} (${topLeader.interestLabel})` : '-'}</span>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontWeight: 900, color: '#111827' }}>Runner-up:</span>{' '}
-                    <span style={{ color: '#374151' }}>{topRunnerUp ? `${topRunnerUp.name} (${topRunnerUp.interestLabel})` : '-'}</span>
-                    {leaderDelta != null ? <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>+{leaderDelta.toFixed(1)}%</span> : null}
-                  </div>
-                </div>
-                <div style={{ marginTop: '10px', height: '16px', width: '100%', display: 'flex', borderRadius: '999px', overflow: 'hidden', background: '#e5e7eb' }}>
-                  {interestSorted.map((o, idx) => (
-                    <div
-                      key={o.name}
-                      style={{ width: `${Math.max(0, o.interestPct)}%`, background: teamColor(o.name, idx), minWidth: o.interestPct > 0 ? '2px' : undefined }}
-                      title={`${o.name} ${o.interestLabel}`}
-                    />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
-                  {interestSorted.slice(0, 6).map((o, idx) => (
-                    <div key={o.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '999px', background: teamColor(o.name, idx) }} />
-                      <span style={{ color: '#374151', fontWeight: 700 }}>{o.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+   
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '18px', fontWeight: 900, color: '#111827' }}>Shortlist</div>
@@ -1029,7 +860,7 @@ export default function RecruitOfferDetailsModal({
               ) : null}
             </div>
 
-            <div style={{ flex: '1 1 460px', minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'sticky', top: '12px', alignSelf: 'flex-start' }}>
+            <div style={{ flex: '3 1 0', minWidth: '460px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '2px solid #e2e8f0', background: '#f8fafc', overflowY: 'auto', height: '100%', padding: '18px' }}>
               {(onContactRecruit || onOfferScholarship || onPullOffer || onCoachVisit || onScheduleOfficialVisit || onScout || onNegativeRecruit) ? (
                 <div style={{ ...sectionCard, padding: '14px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1211,9 +1042,14 @@ export default function RecruitOfferDetailsModal({
                               <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{opt.desc}</div>
                               {impact.keys.length ? (
                                 <div style={{ marginTop: '6px', fontSize: '11px', color: '#475569', fontWeight: 800 }}>
-                                  Fit score: {fitScore}
+                                  Leverage score: {(fitScore / 100).toFixed(2)}
                                 </div>
                               ) : null}
+                              {isBest && strategicFit.reason && (
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: '#1e40af', fontStyle: 'italic', background: '#eff6ff', padding: '6px', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
+                                  {strategicFit.reason}
+                                </div>
+                              )}
                             </div>
                           </label>
                           );
