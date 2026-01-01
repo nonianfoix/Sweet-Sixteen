@@ -1,3 +1,4 @@
+// @ts-nocheck
 // App.scenario.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { gameReducer } from '../App';
@@ -377,3 +378,4 @@ describe('App.tsx gameReducer scenario tests', () => {
         expect(updatedUserTeam?.roster.find(p => p.id === playerToOffer.id)?.nilContractAmount).toBe(offerAmount);
     });
 });
+

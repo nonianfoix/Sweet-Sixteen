@@ -18,7 +18,7 @@ export default vitestDefineConfig(({ mode }) => { // Use vitest's defineConfig
       resolve: {
         alias: {
           // Pointing '@' to the project root with an absolute path.
-          '@': path.resolve('./'),
+          '@': path.resolve('./src'),
         }
       },
     });
