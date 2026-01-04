@@ -169,6 +169,20 @@ export const calculatePlayerNilValue = (
         rawValue = rawValue * (1 - hypeWeight) + proHype * hypeWeight;
     }
     
+    // TEAM BUDGET SCALING (NIL Model Enhancement)
+    // Players at high-budget programs expect more NIL because the market sets higher prices.
+    // Duke ($11M budget) players should expect ~5-6x more than Alcorn State ($2M) players.
+    const teamBudget = team.nilBudget ?? 1500000; // Default to $1.5M if not set
+    const rosterSize = team.roster?.length || 15;
+    const perPlayerBudget = teamBudget / Math.max(rosterSize, 12); // Per-player share
+    
+    // Baseline is $100K per player ($1.5M / 15). Scale expectations proportionally.
+    const budgetBaseline = 100000;
+    const budgetMultiplier = clampNumber(perPlayerBudget / budgetBaseline, 0.5, 8.0); // 0.5x to 8x range
+    
+    // Apply budget multiplier (50% influence - not fully deterministic)
+    rawValue = rawValue * (0.5 + budgetMultiplier * 0.5);
+    
     // Increase cap to reflect competitive NBA salaries (approx 10-15% of max NBA salary for top college stars)
     const nilCap = Math.round(MAX_NBA_SALARY * 0.08); // ~4.8M
     return Math.round(clampNumber(rawValue, 25000, nilCap));
@@ -183,32 +197,98 @@ export const getConferenceNilCap = (teamName: string): number => {
 
 export const calculateTeamNilBudget = (
     team: Team,
-    context: { fanSentiment: number; sponsorTier: SponsorTier; tournamentBonus: number }
+    context: {
+      fanSentiment: number;
+      sponsorTier: SponsorTier;
+      tournamentBonus: number;
+      previousYearBudget?: number;
+      seasonWins?: number;
+      seasonLosses?: number;
+      recruitingClassRank?: number;
+    }
 ): number => {
-    const prestigePortion = (team.prestige || 50) * 25000;
-    const sponsorPortion = SPONSOR_TIER_BONUS[context.sponsorTier || 'Low'] * 400000;
-    const fanPortion = (context.fanSentiment || 50) * 8000;
-    const tournamentPortion = (context.tournamentBonus || 0) * 60000;
-    const baseWealth = getProgramWealth(team).donationLevel * 4000;
+    // LAYER 1: Alumni Wealth Foundation
+    const alumniRegistry = team.alumniRegistry;
+    const countsPerProfession = alumniRegistry?.summaryStats?.countsPerProfession || {};
+    const professionWeights: Record<string, number> = {
+        'Finance': 50000, 'Tech': 45000, 'Law': 40000, 'Medicine': 35000,
+        'Entrepreneur': 60000, 'Business': 30000, 'Coaching': 5000, 'Media': 20000,
+        'Education': 5000, 'Public Service': 5000, 'Arts': 10000,
+    };
+    let alumniWealthBase = 0;
+    for (const [profession, count] of Object.entries(countsPerProfession)) {
+        alumniWealthBase += (count || 0) * (professionWeights[profession] || 10000);
+    }
+    const titanCount = alumniRegistry?.allAlumni?.filter(a => a.archetype === 'Titan').length || 0;
+    const titanBonus = titanCount * 500000;
 
-    const counts = team.alumniRegistry?.summaryStats?.countsPerProfession || {};
-    const alumniBonus = (counts['Finance'] || 0) * 10000 +
-                        (counts['Law'] || 0) * 10000 +
-                        (counts['Medicine'] || 0) * 10000;
+    // LAYER 2: School Identity Multipliers
+    let identityMultiplier = 1.0;
+    const religiousMultipliers: Record<string, number> = {
+        'BYU': 1.50, 'Notre Dame': 1.40, 'Gonzaga': 1.30, 'Villanova': 1.25,
+        'Georgetown': 1.20, 'Marquette': 1.15, 'St. Johns': 1.10, 'Creighton': 1.10,
+        'Providence': 1.10, 'Baylor': 1.15, 'Wake Forest': 1.10, 'TCU': 1.08,
+    };
+    if (religiousMultipliers[team.name]) identityMultiplier *= religiousMultipliers[team.name];
+    const ivyMultipliers: Record<string, number> = {
+        'Harvard': 2.00, 'Penn': 1.90, 'Yale': 1.80, 'Princeton': 1.75,
+        'Columbia': 1.70, 'Cornell': 1.50, 'Brown': 1.40, 'Dartmouth': 1.35,
+    };
+    if (ivyMultipliers[team.name]) identityMultiplier *= ivyMultipliers[team.name];
+    const flagshipMultipliers: Record<string, number> = {
+        'Texas': 1.60, 'Michigan': 1.50, 'Ohio State': 1.45, 'Penn State': 1.35,
+        'Florida': 1.30, 'Georgia': 1.25, 'Alabama': 1.25, 'LSU': 1.20,
+    };
+    if (flagshipMultipliers[team.name]) identityMultiplier *= flagshipMultipliers[team.name];
+    const blueBloodMultipliers: Record<string, number> = {
+        'Duke': 1.50, 'Kentucky': 1.40, 'Kansas': 1.35, 'North Carolina': 1.35,
+        'UCLA': 1.30, 'Indiana': 1.20, 'UConn': 1.15, 'Louisville': 1.10,
+    };
+    if (blueBloodMultipliers[team.name]) identityMultiplier *= blueBloodMultipliers[team.name];
 
-    const total = prestigePortion + sponsorPortion + fanPortion + tournamentPortion + baseWealth + alumniBonus;
-    const sentimentPenalty = Math.max(0, 60 - (context.fanSentiment || 50)) * 20000;
-    let adjustedTotal = Math.max(0, total - Math.min(total, sentimentPenalty));
+    // LAYER 3: Traditional Factors
+    const prestigePortion = (team.prestige || 50) * 15000;
+    const sponsorPortion = SPONSOR_TIER_BONUS[context.sponsorTier || 'Low'] * 200000;
+    const fanPortion = (context.fanSentiment || 50) * 5000;
+    const tournamentPortion = (context.tournamentBonus || 0) * 75000;
+    const baseWealth = getProgramWealth(team).donationLevel * 3000;
 
-    // Apply Soft Cap Logic
-    const softCap = getConferenceNilCap(team.name);
-    if (adjustedTotal > softCap) {
-        // Luxury Tax / Diminishing Returns: 50% efficiency for every dollar over cap
-        const excess = adjustedTotal - softCap;
-        adjustedTotal = softCap + (excess * 0.5);
+    // LAYER 4: Year-Over-Year Dynamics
+    let yearOverYearAdjustment = 0;
+    if (context.seasonWins !== undefined && context.seasonLosses !== undefined) {
+        const totalGames = context.seasonWins + context.seasonLosses;
+        if (totalGames > 0) {
+            const winPct = context.seasonWins / totalGames;
+            if (winPct > 0.7) yearOverYearAdjustment += 150000;
+            else if (winPct > 0.5) yearOverYearAdjustment += 50000;
+            else if (winPct < 0.3) yearOverYearAdjustment -= 100000;
+        }
+    }
+    if (context.recruitingClassRank !== undefined) {
+        if (context.recruitingClassRank <= 5) yearOverYearAdjustment += 200000;
+        else if (context.recruitingClassRank <= 15) yearOverYearAdjustment += 100000;
+        else if (context.recruitingClassRank <= 30) yearOverYearAdjustment += 50000;
+    }
+    if (context.tournamentBonus > 0 && context.previousYearBudget) {
+        yearOverYearAdjustment += context.tournamentBonus * 40000 * 0.5;
     }
 
-    return Math.max(150000, Math.round(adjustedTotal));
+    // LAYER 5: Market Variance
+    const marketVariance = (Math.random() * 0.2 - 0.1);
+
+    // FINAL CALCULATION
+    let rawBudget = alumniWealthBase + titanBonus + prestigePortion + 
+                    sponsorPortion + fanPortion + tournamentPortion + 
+                    baseWealth + yearOverYearAdjustment;
+    rawBudget *= identityMultiplier;
+    rawBudget *= (1 + marketVariance);
+
+    // LAYER 6: Soft Cap & Floor
+    const softCap = getConferenceNilCap(team.name);
+    if (rawBudget > softCap) {
+        rawBudget = softCap + ((rawBudget - softCap) * 0.5);
+    }
+    return Math.max(150000, Math.round(rawBudget));
 };
 
 const determineSponsorSubsidy = (player: Player, team: Team): number => {

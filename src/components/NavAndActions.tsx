@@ -88,6 +88,7 @@ const NavAndActions = ({
     const [isSimulatingSeason, setIsSimulatingSeason] = useState(false);
     const [isSimulatingTournament, setIsSimulatingTournament] = useState(false);
     const [isSimulatingToGame, setIsSimulatingToGame] = useState(false);
+    const [isShowingTournamentResults, setIsShowingTournamentResults] = useState(false);
 
     // Refs for simulation state to avoid closure staleness in timeouts
     const isSimulatingSeasonRef = useRef(isSimulatingSeason);
@@ -176,7 +177,7 @@ const NavAndActions = ({
 
                 tournamentTimerRef.current = setTimeout(() => {
                     runTournamentSim();
-                }, 50);
+                }, 5000); // 5 second delay between rounds for auto-sim
             };
 
             runTournamentSim();
@@ -305,7 +306,14 @@ const NavAndActions = ({
 
         // Tournament (prioritize explicit tournament view even if gameInSeason is stale)
         if (state.status === GameStatus.TOURNAMENT && state.tournament && !state.tournament.champion) {
-            actions.push({ label: 'Simulate Round', onClick: () => dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' }) });
+            actions.push({ 
+                label: isShowingTournamentResults ? 'Viewing Results...' : 'Simulate Round', 
+                onClick: () => {
+                    dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' });
+                    setIsShowingTournamentResults(true);
+                    setTimeout(() => setIsShowingTournamentResults(false), 5000);
+                } 
+            });
         }
         // Regular Season
         else if (state.gameInSeason <= 31) {
@@ -318,7 +326,14 @@ const NavAndActions = ({
         }
         // Tournament (fallback)
         else if (state.tournament && !state.tournament.champion) {
-            actions.push({ label: 'Simulate Round', onClick: () => dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' }) });
+            actions.push({ 
+                label: isShowingTournamentResults ? 'Viewing Results...' : 'Simulate Round', 
+                onClick: () => {
+                    dispatch({ type: 'SIMULATE_TOURNAMENT_ROUND' });
+                    setIsShowingTournamentResults(true);
+                    setTimeout(() => setIsShowingTournamentResults(false), 5000);
+                } 
+            });
         }
         // Signing Period
         else if (state.signingPeriodDay <= 7) {
@@ -401,7 +416,7 @@ const NavAndActions = ({
                         key={idx} 
                         style={buttonStyle} 
                         onClick={action.onClick} 
-                        disabled={advanceDisabled || isSimulatingSeason || isSimulatingToGame}
+                        disabled={advanceDisabled || isSimulatingSeason || isSimulatingToGame || isShowingTournamentResults}
                     >
                         {action.label}
                     </button>

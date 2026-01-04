@@ -6,6 +6,31 @@ import { buildDraftProspectBoard } from '../services/gameService';
 import { formatPlayerHeight } from '../services/gameReducer';
 import type { GameState, GameAction, TeamColors, Player } from '../types';
 
+const renderYearPill = (year: Player['year']) => {
+    const yearColors: Record<Player['year'], { bg: string; text: string }> = {
+        'Fr': { bg: '#e0f2f1', text: '#00695c' },
+        'So': { bg: '#e3f2fd', text: '#1565c0' },
+        'Jr': { bg: '#fff3e0', text: '#e65100' },
+        'Sr': { bg: '#ffebee', text: '#c62828' },
+        'Intl': { bg: '#f3e5f5', text: '#7b1fa2' },
+        'Pro': { bg: '#fce4ec', text: '#c2185b' },
+    };
+    const colors = yearColors[year] || { bg: '#f5f5f5', text: '#333' };
+    return (
+        <span style={{
+            backgroundColor: colors.bg,
+            color: colors.text,
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontWeight: 700,
+            fontSize: '0.65rem',
+            border: `1px solid ${colors.text}`,
+        }}>
+            {year}
+        </span>
+    );
+};
+
 interface StandingsProps {
     state: GameState;
     colors: TeamColors;
@@ -150,7 +175,7 @@ const PlayerStats = ({ state, colors }: { state: GameState; colors: TeamColors }
                                     <td style={styles.td}>{player.teamName} {teamRank ? `(#${teamRank})` : ''}</td>
                                     <td style={styles.td}>{player.position}</td>
                                     <td style={styles.td}>{formatPlayerHeight(player.height)}</td>
-                                    <td style={styles.td}>{player.year}</td>
+                                    <td style={styles.td}>{renderYearPill(player.year)}</td>
                                     <td style={styles.td}>{player.overall}</td>
                                     <td style={styles.td}>{(player.seasonStats.points / (player.seasonStats.gamesPlayed || 1)).toFixed(1)}</td>
                                     <td style={styles.td}>{(player.seasonStats.rebounds / (player.seasonStats.gamesPlayed || 1)).toFixed(1)}</td>

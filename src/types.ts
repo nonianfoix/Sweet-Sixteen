@@ -389,6 +389,15 @@ export interface RecruitMotivation {
     academics: number;
 }
 
+// Action tracking per team for each recruit
+export interface RecruitActionHistory {
+    maintains: number;        // Count of maintain actions (max 5 useful)
+    coachVisits: number;      // Count of coach visits (max 2 useful)
+    officialVisit: boolean;   // Has done official visit
+    scoutLevel: number;       // 0-3
+    negativeAgainst: string[]; // Schools negatively recruited against
+}
+
 export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seasonStats' | 'isTargeted'> {
   verbalCommitment: string | null;
   userHasOffered: boolean;
@@ -476,6 +485,27 @@ export interface Recruit extends Omit<Player, 'year' | 'starterPosition' | 'seas
   currentLeader?: string | null;
   currentSecond?: string | null;
   leaderShare?: number;
+  
+  // Sponsor Affinity (NIL Model Enhancement)
+  sponsorPreference?: SponsorName | null;  // AAU team sponsor or personal preference
+  sponsorAffinityStrength?: number;        // 0-100 (how much they care)
+  aauProgramSponsor?: SponsorName;         // Their AAU team's sponsor
+  highSchoolSponsor?: SponsorName;         // Their HS's sponsor (if elite program)
+  aauProgramName?: string;                 // e.g., "City Reapers", "MoKan Elite"
+  
+  // Recruiting Action Tracking (affects SHARE calculation)
+  actionHistory?: Record<string, RecruitActionHistory>; // teamName -> action counts
+  
+  // Official Visit Limit (NCAA rule: 5 total across all schools)
+  officialVisitsUsed?: number;  // Track total official visits taken (max 5)
+  
+  // Neglect Penalty Tracking
+  lastContactFromCommittedSchool?: number;  // Week when committed school last contacted
+  
+  // Early Offer Loyalty Tracking
+  firstOfferTeam?: string;       // First team to offer (gets highest loyalty bonus)
+  firstOfferWeek?: number;       // Week of first offer
+  earlyOfferTeams?: string[];    // First 3 teams to offer (in order, for relationship bonus)
 }
 
 export interface TimelineEvent {
@@ -733,6 +763,20 @@ export interface Sponsor {
     type: 'Apparel' | 'NamingRights' | 'OfficialPartner';
     isAlumniOwned?: boolean;
     syndicateBonus?: number; // Extra revenue multiplier if alumni sentiment is high
+    
+    // NIL Integration
+    nilPoolContribution?: number;       // Annual $ contribution to school's NIL collective
+    nilAgencyPartners?: string[];       // e.g., ["Klutch Sports", "Roc Nation"]
+    athleteMarketingBudget?: number;    // $ available for athlete endorsements
+    
+    // Recruiting Influence
+    pipelineStates?: string[];          // States where sponsor has strong AAU presence
+    pipelineHighSchools?: string[];     // Elite prep schools in sponsor network
+    recruitingBonusMultiplier?: number; // 1.0-1.5x interest boost for aligned recruits
+    
+    // Brand Affinity
+    elitePartnerSchools?: string[];     // Schools that get priority treatment
+    brandLoyaltyScore?: number;         // 0-100, how much sponsor values this relationship
 }
 
 
@@ -1248,6 +1292,21 @@ export type InstitutionalProfile = {
   countyPopulation: number | null;
   countyMedianHouseholdIncome: number | null;
   marketBasis: string | null;
+  
+  // School Identity Flags (NIL Model Enhancement)
+  religiousAffiliation?: 'Catholic' | 'Mormon' | 'Southern Baptist' | 'None';
+  isIvyLeague?: boolean;
+  isBlueBloodBasketball?: boolean;
+  isFlagshipState?: boolean;
+  isHistoricallyBlack?: boolean;
+  
+  // Alumni Network Strength
+  alumniGivingRate?: number;        // % of alumni who donate annually (0-100)
+  alumniLoyaltyScore?: number;      // Engagement factor (0-100)
+  
+  // NIL-Specific Metrics
+  nilCollectiveMaturity?: 'Nascent' | 'Developing' | 'Established' | 'Elite';
+  corporateSponsorDensity?: number; // Local Fortune 500 companies
 };
 
 export interface TeamSeasonStats {
@@ -1835,6 +1894,59 @@ export interface SeasonAnchors {
 }
 
 // Season Recap Data Interface
+
+/**
+ * Full 365-day annual calendar containing dates for all leagues and events.
+ * Used to coordinate college basketball, NBA, recruiting, and transfer portal timing.
+ */
+export interface AnnualCalendar {
+  year: number; // The calendar year (e.g., 2025)
+  
+  // College Basketball (mirrors SeasonAnchors for consistency)
+  collegeSeasonStart: ISODate;        // ~Nov 4 (Mon before first game week)
+  collegeRegularSeasonEnd: ISODate;   // ~Mar 1
+  confTourneyStart: ISODate;          // ~Mar 10
+  confTourneyEnd: ISODate;            // ~Mar 15
+  selectionSunday: ISODate;           // ~Mar 16
+  ncaaTournamentStart: ISODate;       // ~Mar 18
+  ncaaTournamentEnd: ISODate;         // ~Apr 7 (Title game)
+  
+  // Transfer Portal Windows (NCAA rules - effective 2024)
+  transferPortalWindow1Start: ISODate; // Dec 9
+  transferPortalWindow1End: ISODate;   // Dec 28 (20 days)
+  transferPortalWindow2Start: ISODate; // Apr 16
+  transferPortalWindow2End: ISODate;   // Apr 30 (15 days)
+  
+  // Recruiting Periods
+  earlySigningPeriodStart: ISODate;    // Nov (Wed before Thanksgiving)
+  earlySigningPeriodEnd: ISODate;      // Nov (1 week)
+  nliSigningDayStart: ISODate;         // Apr (mid-April)
+  nliSigningDayEnd: ISODate;           // May (late May)
+  summerRecruitingStart: ISODate;      // Jun 15 (official visits open)
+  summerRecruitingEnd: ISODate;        // Aug 15
+  
+  // NBA Calendar
+  nbaPreseasonStart: ISODate;          // ~Oct 7
+  nbaSeasonStart: ISODate;             // ~Oct 22
+  nbaAllStarBreakStart: ISODate;       // ~Feb 14
+  nbaAllStarBreakEnd: ISODate;         // ~Feb 20
+  nbaRegularSeasonEnd: ISODate;        // ~Apr 13
+  nbaPlayInStart: ISODate;             // ~Apr 15
+  nbaPlayInEnd: ISODate;               // ~Apr 19
+  nbaPlayoffsStart: ISODate;           // ~Apr 20
+  nbaFinalsStart: ISODate;             // ~Jun 5
+  nbaFinalsEnd: ISODate;               // ~Jun 20
+  nbaDraftLottery: ISODate;            // ~May 14
+  nbaDraft: ISODate;                   // ~Jun 26
+  nbaFreeAgencyStart: ISODate;         // Jul 1
+  nbaSummerLeagueStart: ISODate;       // Jul 5
+  nbaSummerLeagueEnd: ISODate;         // Jul 20
+  
+  // College Offseason Milestones
+  proDeclarationDeadline: ISODate;     // Mar 24 (players declare for draft)
+  proWithdrawalDeadline: ISODate;      // May 29 (can withdraw and return)
+  graduationPeriod: ISODate;           // ~May 15
+}
 export interface SeasonRecapResult {
     wins: number;
     losses: number;
@@ -1945,6 +2057,7 @@ export interface GameState {
   season: number;
   seasonYear: number;
   seasonAnchors: SeasonAnchors;
+  calendar?: AnnualCalendar; // Full 365-day calendar (optional for backward compatibility)
   currentDate: ISODate;
   gameInSeason: number;
   week: number;
@@ -2013,6 +2126,7 @@ export interface GameState {
   nbaSeason?: number;
   nbaRecord?: { wins: number; losses: number };
       nbaSchedule?: GameResult[][];
+      nbaSeasonSchedule?: NBASeasonSchedule; // New date-based NBA schedule
       nbaFreeAgents?: NBAFreeAgent[]; 
       nbaTransactions?: NBATransaction[];
       updatedNBATeams?: Team[];
@@ -2074,12 +2188,66 @@ export interface NBAPlayoffMatchup extends GameResult {
     seriesScore: { home: number; away: number };
 }
 
+/**
+ * Enhanced NBA playoff series with individual game dates.
+ */
+export interface NBAPlayoffSeries {
+    id: string;
+    homeTeam: string;
+    awayTeam: string;
+    homeSeed: number;
+    awaySeed: number;
+    homeWins: number;
+    awayWins: number;
+    games: NBAScheduledGame[];
+    winner: string | null;
+    conference: 'East' | 'West' | 'Finals';
+    round: 'first' | 'semis' | 'conf_finals' | 'finals';
+}
+
+/**
+ * Full playoff bracket with play-in results and all series.
+ */
+export interface NBAPlayoffBracket {
+    season: number;
+    playInResults?: {
+        east: {
+            seed7: string;
+            seed8: string;
+            winner7v8: string;
+            loser7v8: string;
+            seed9: string;
+            seed10: string;
+            winner9v10: string;
+            finalSeed7: string;
+            finalSeed8: string;
+        };
+        west: {
+            seed7: string;
+            seed8: string;
+            winner7v8: string;
+            loser7v8: string;
+            seed9: string;
+            seed10: string;
+            winner9v10: string;
+            finalSeed7: string;
+            finalSeed8: string;
+        };
+    };
+    firstRound: NBAPlayoffSeries[];
+    confSemis: NBAPlayoffSeries[];
+    confFinals: NBAPlayoffSeries[];
+    finals: NBAPlayoffSeries | null;
+    champion: string | null;
+}
+
 export interface NBAPlayoffs {
     firstRound: NBAPlayoffMatchup[];
     conferenceSemis: NBAPlayoffMatchup[];
     conferenceFinals: NBAPlayoffMatchup[];
     finals: NBAPlayoffMatchup | null;
     champion: string | null;
+    bracket?: NBAPlayoffBracket; // Enhanced bracket with dates
 }
 
 export interface PendingStaffRenewal {
@@ -2098,6 +2266,34 @@ export interface NBATeamSimulation {
     wins: number;
     losses: number;
     playoffFinish: number; // 0=Champ, 1=Finals, 2=ConfFinals, 3=Semis, 4=FirstRound, 5=Missed
+}
+
+/**
+ * NBA game with full date information for the 365-day calendar system.
+ */
+export interface NBAScheduledGame {
+    id: string;
+    date: ISODate;
+    homeTeam: string;
+    awayTeam: string;
+    homeScore: number;
+    awayScore: number;
+    played: boolean;
+    isNationalTV: boolean;
+    tvNetwork?: 'ESPN' | 'TNT' | 'ABC' | 'NBATV' | 'League Pass';
+    gameType: 'preseason' | 'regular' | 'playin' | 'playoff';
+    playoffRound?: 'first' | 'semis' | 'conf_finals' | 'finals';
+    playoffSeriesId?: string;
+}
+
+/**
+ * Full NBA season schedule indexed by date for efficient lookup.
+ */
+export interface NBASeasonSchedule {
+    seasonYear: number; // e.g., 2024 for 2024-25 season
+    gamesByDate: Record<ISODate, string[]>; // date -> game IDs
+    gamesById: Record<string, NBAScheduledGame>;
+    teamSchedules: Record<string, ISODate[]>; // team name -> list of game dates
 }
 
 export interface NBASimulationResult {

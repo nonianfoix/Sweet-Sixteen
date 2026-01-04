@@ -48,6 +48,9 @@ import { NBA_SALARIES } from '../data/nbaSalaries';
 import { REAL_NBA_RATINGS } from '../data/realNbaRatings';
 import { ALL_HISTORICAL_DRAFTS } from '../data/allHistoricalDrafts';
 import { NBA_DRAFT_PICK_RULES } from '../data/nbaDraftPickSwaps';
+import { buildAnnualCalendar } from './calendarService';
+import { generateNBAScheduleWithDates, updateNBAGameResult } from './nbaScheduleService';
+import { addDaysISO, isAfter } from './dateService';
 import { computeDraftPickOwnership, DraftSlotAssignment } from './draftUtils';
 import { ensurePlayerNilProfile, calculateTeamNilBudget, updateNILCollective } from './nilService';
 import { generateAlumni, updateAlumniRegistry, generateBaselineAlumniRegistry, recalculateAlumniInfluence, processAlumniWealthGrowth } from './alumniService';
@@ -1632,6 +1635,65 @@ export const createRecruit = (): Recruit => {
         100
     );
 
+    // Sponsor Preference Assignment (NIL Model Enhancement)
+    const sponsorNames: SponsorName[] = ['Nike', 'Jordan', 'Adidas', 'Under Armour', 'Puma', 'New Balance'];
+    const sponsorPipelineStates: Record<SponsorName, string[]> = {
+        'Nike': ['CA', 'TX', 'FL', 'GA', 'IL', 'OH', 'NY', 'VA', 'NC'],
+        'Jordan': ['NC', 'MD', 'FL', 'GA', 'VA', 'NY', 'MI'],
+        'Adidas': ['IN', 'KS', 'KY', 'NY', 'CA', 'TX', 'IL', 'NJ'],
+        'Under Armour': ['MD', 'IN', 'AL', 'TX', 'GA', 'PA', 'WI'],
+        'Puma': ['NY', 'CA', 'FL'],
+        'New Balance': ['MA', 'CT', 'NY'],
+        'Reebok': ['MA', 'NY'],
+    };
+    const aauProgramNames: Record<SponsorName, string[]> = {
+        'Nike': ['City Reapers', 'Drive Nation', 'Team Takeover', 'MeanStreets', 'Oakland Soldiers', 'Compton Magic', 'Houston Hoops', 'Georgia Stars'],
+        'Jordan': ['Team CP3', 'Team Penny', 'Carolina Wolves', 'Team Melo'],
+        'Adidas': ['Mass Rivals', 'Indiana Elite', 'Dream Vision', 'MoKan Elite', 'Phenom University', 'Expressions Elite'],
+        'Under Armour': ['DC Premier', 'Indy Hoosiers', 'Canada Elite', 'NY Lightning', 'Boo Williams'],
+        'Puma': ['NY Renaissance', 'West Coast Elite'],
+        'New Balance': ['Boston AAU Elite', 'New England Playaz'],
+        'Reebok': ['Classic Elite', 'Legacy Basketball'],
+    };
+
+    // Determine AAU sponsor based on state (weighted toward dominant sponsors in state)
+    let aauProgramSponsor: SponsorName | undefined;
+    let aauProgramName: string | undefined;
+    let sponsorAffinityStrength: number = 0;
+    
+    // Find which sponsors have presence in recruit's home state
+    const stateSponsorMatches = sponsorNames.filter(s => 
+        sponsorPipelineStates[s]?.includes(hometownStateCode)
+    );
+    
+    if (stateSponsorMatches.length > 0) {
+        // Pick from sponsors with state presence, weighted toward first (strongest) matches
+        aauProgramSponsor = pickRandom(stateSponsorMatches);
+        aauProgramName = pickRandom(aauProgramNames[aauProgramSponsor] || ['Elite AAU']);
+        
+        // Elite recruits have stronger sponsor affinity (more likely to be on elite AAU teams)
+        if (isElite) {
+            sponsorAffinityStrength = randomBetween(50, 85);
+        } else {
+            sponsorAffinityStrength = randomBetween(20, 55);
+        }
+    } else {
+        // Default random sponsor for states without strong pipeline presence
+        if (Math.random() < 0.6) {
+            aauProgramSponsor = pickRandom(sponsorNames);
+            aauProgramName = pickRandom(aauProgramNames[aauProgramSponsor] || ['Local AAU']);
+            sponsorAffinityStrength = randomBetween(10, 40);
+        }
+    }
+    
+    // Elite prep school recruits may have HS sponsor too
+    const highSchoolSponsor: SponsorName | undefined = 
+        finalSchoolType === 'Prep' && Math.random() < 0.7 ? pickRandom(['Nike', 'Jordan', 'Adidas', 'Under Armour']) :
+        undefined;
+    
+    // Sponsor preference is primarily driven by AAU, but HS can override for prep players
+    const sponsorPreference: SponsorName | null = highSchoolSponsor || aauProgramSponsor || null;
+
     return {
         ...recruitData,
         verbalCommitment: null,
@@ -1691,6 +1753,12 @@ export const createRecruit = (): Recruit => {
         // NBA Transition fields
         physicalProfile,
         translatableSkills,
+        // Sponsor Affinity (NIL Model Enhancement)
+        sponsorPreference,
+        sponsorAffinityStrength,
+        aauProgramSponsor,
+        highSchoolSponsor,
+        aauProgramName,
     };
 };
 
@@ -2417,7 +2485,31 @@ export const rollOverTeamsForNextSeason = (teams: Team[], season: number): Team[
         };
 
         const withBoosterPass = applyOffseasonAlumniBoosterPass(rolledTeam, season);
-        return resetSeasonFinances(withBoosterPass);
+        
+        // Recalculate NIL Budget for Next Season (Year-Over-Year Dynamics)
+        const previousNilBudget = team.nilBudget;
+        const seasonWins = team.record?.wins ?? 0;
+        const seasonLosses = team.record?.losses ?? 0;
+        // Tournament bonus is captured in the win/loss record and prestige updates
+        const tournamentBonus = 0;
+        
+        const newNilBudget = calculateTeamNilBudget(withBoosterPass, {
+            fanSentiment: withBoosterPass.fanMorale || withBoosterPass.fanInterest || 50,
+            sponsorTier: withBoosterPass.sponsor?.tier || 'Low',
+            tournamentBonus,
+            previousYearBudget: previousNilBudget,
+            seasonWins,
+            seasonLosses,
+        });
+        
+        const updatedWithNil = {
+            ...withBoosterPass,
+            nilBudget: newNilBudget,
+            nilBudgetUsed: 0, // Reset for new season
+            nilBoostFromSponsor: Math.round(newNilBudget * 0.15),
+        };
+        
+        return resetSeasonFinances(updatedWithNil);
     });
 };
 
@@ -3707,8 +3799,9 @@ export const initializeGameWorld = (userTeamName: string) => {
         isUserTeam: name === userTeamName,
         sponsor,
         sponsorRevenue: { jersey: 0, shoe: 0, merch: 0, total: 0 },
-        sponsorContractYearsRemaining: 1,
-        sponsorContractLength: 1,
+        // Oregon has a permanent 50-year Nike deal (Phil Knight relationship)
+        sponsorContractYearsRemaining: (name === 'Oregon' && sponsor?.name === 'Nike') ? 50 : 1,
+        sponsorContractLength: (name === 'Oregon' && sponsor?.name === 'Nike') ? 50 : 1,
         sponsorOffers: [],
         fanInterest,
         fanMorale: clamp(prestige + randomBetween(-10, 10), 5, 99),
@@ -3908,6 +4001,45 @@ export const initializeGameWorld = (userTeamName: string) => {
   const nbaTeams = initializeNBATeams();
   const nbaSchedule = generateNBASchedule(nbaTeams);
 
+  // NEW: 365-Day Calendar NBA Pre-Simulation
+  const calendar = buildAnnualCalendar(seasonYear);
+  const nbaSeasonSchedule = generateNBAScheduleWithDates(nbaTeams, calendar);
+  
+  // Pre-simulate NBA games up to college start
+  const nbaTeamMap = new Map(nbaTeams.map(t => [t.name, t]));
+  let presimDate = calendar.nbaSeasonStart;
+  
+  // Loop distinct dates until we reach the college season start
+  while (presimDate < seasonAnchors.seasonStart) {
+      const gameIds = nbaSeasonSchedule.gamesByDate[presimDate] || [];
+      
+      for (const gid of gameIds) {
+          const game = nbaSeasonSchedule.gamesById[gid];
+          const home = nbaTeamMap.get(game.homeTeam);
+          const away = nbaTeamMap.get(game.awayTeam);
+          
+          if (home && away) {
+               // Simulate game
+               const result = simulateGame(home, away, `PRESIM-${game.id}`);
+               
+               // Update schedule record
+               game.homeScore = result.homeScore;
+               game.awayScore = result.awayScore;
+               game.played = true;
+               
+               // Update standings
+               if (result.homeScore > result.awayScore) {
+                   home.record.wins++;
+                   away.record.losses++;
+               } else {
+                   away.record.wins++;
+                   home.record.losses++;
+               }
+          }
+      }
+      presimDate = addDaysISO(presimDate, 1);
+  }
+
   const eventPlaybookCatalog = buildEventPlaybookCatalog();
   // Pass allTeams to buildSponsorQuestDeck so we can match quests to current sponsors
   const sponsorQuestDeck = allTeams.flatMap(team => generateSponsorQuests(team, 1));
@@ -3917,6 +4049,7 @@ export const initializeGameWorld = (userTeamName: string) => {
       eventQueue,
       seasonYear,
       seasonAnchors,
+      calendar,
       recruitingCadence: 'daily',
       scheduledGamesById: generatedSchedule.scheduledGamesById,
       teamSchedulesById: generatedSchedule.teamSchedulesById,
@@ -3928,6 +4061,7 @@ export const initializeGameWorld = (userTeamName: string) => {
       nbaSimulation,
       nbaTeams,
       nbaSchedule,
+      nbaSeasonSchedule,
       eventPlaybookCatalog,
       sponsorQuestDeck,
       nbaFreeAgents: generateInitialNBAFreeAgents(),
@@ -5416,6 +5550,112 @@ const nilPriorityInterestBonuses: Record<RecruitNilPriority, (team: Team) => num
     BrandExposure: team => getTeamMarketScore(team) * 0.06 + getTeamCommunityScore(team) * 0.03,
 };
 
+// Sponsor Alignment Bonus (NIL Model Enhancement)
+// Returns a bonus/penalty based on whether the recruit's AAU/HS sponsor matches the team's sponsor
+const getSponsorAlignmentBonus = (recruit: Recruit, team: Team): { bonus: number; hasSponsorAlignment: boolean } => {
+    if (!team.sponsor?.name) return { bonus: 0, hasSponsorAlignment: false };
+    
+    const teamSponsor = team.sponsor.name;
+    const recruitSponsor = recruit.sponsorPreference || recruit.aauProgramSponsor;
+    
+    if (!recruitSponsor) return { bonus: 0, hasSponsorAlignment: false };
+    
+    // Perfect match: recruit's sponsor matches team's sponsor
+    if (recruitSponsor === teamSponsor) {
+        const affinityStrength = clamp((recruit.sponsorAffinityStrength ?? 50) / 100, 0.3, 1.0);
+        const nilWeight = clamp((recruit.motivations?.nil ?? 50) / 100, 0, 1);
+        // Base bonus: 6-15 points depending on affinity strength and NIL motivation
+        const baseBonus = 6 + (affinityStrength * 9);
+        return { bonus: baseBonus * (0.7 + nilWeight * 0.3), hasSponsorAlignment: true };
+    }
+    
+    // Check for Nike/Jordan compatibility (Jordan is Nike subsidiary)
+    const nikeFamily = ['Nike', 'Jordan'];
+    if (nikeFamily.includes(recruitSponsor) && nikeFamily.includes(teamSponsor)) {
+        const affinityStrength = clamp((recruit.sponsorAffinityStrength ?? 50) / 100, 0.3, 1.0);
+        return { bonus: 4 * affinityStrength, hasSponsorAlignment: true };
+    }
+    
+    // Sponsor mismatch penalty (only for recruits who strongly care about sponsor)
+    const affinityStrength = recruit.sponsorAffinityStrength ?? 0;
+    if (affinityStrength > 70) {
+        // High affinity recruits get a penalty for mismatched sponsors
+        return { bonus: -3 - (affinityStrength - 70) * 0.1, hasSponsorAlignment: false };
+    }
+    
+    return { bonus: 0, hasSponsorAlignment: false };
+};
+
+// Calculate recruiting action bonus based on actions taken by the team
+const getActionBonus = (recruit: Recruit, teamName: string): number => {
+    const history = recruit.actionHistory?.[teamName];
+    if (!history) return 0;
+    
+    let bonus = 0;
+    
+    // Maintain contacts (each maintain = +6, max +30 at 5 maintains) - boosted
+    bonus += Math.min(30, (history.maintains || 0) * 6);
+    
+    // Coach visit (+25, one-time only - significant impact)
+    if (history.coachVisits && history.coachVisits >= 1) bonus += 25;
+    
+    // Official visit (+30, one-time - biggest single action)
+    if (history.officialVisit) bonus += 30;
+    
+    // Scout level (+5 per level, max +15 at level 3)
+    bonus += Math.min(15, (history.scoutLevel || 0) * 5);
+    
+    // Scout-based maintain bonus (can be negative for low grade scouts!)
+    bonus += (history as any).scoutMaintainBonus || 0;
+    
+    // Total max bonus: 30 + 25 + 30 + 15 + variable = 100+ potential
+    
+    return bonus;
+};
+
+// EARLY OFFER LOYALTY BONUS
+// Schools that offer first build lasting relationships with recruits
+const getEarlyOfferBonus = (recruit: Recruit, teamName: string, currentWeek: number, teamPrestige: number): number => {
+    let bonus = 0;
+    
+    // First offer gets the highest loyalty bonus (decays over time)
+    if (recruit.firstOfferTeam === teamName) {
+        const weeksSinceOffer = currentWeek - (recruit.firstOfferWeek ?? 0);
+        const firstOfferBonus = Math.max(3, 8 - weeksSinceOffer); // +8 decaying to +3
+        bonus += firstOfferBonus;
+        
+        // UPSTART BONUS: Low-prestige schools get extra loyalty if they believed first
+        if (teamPrestige < 60) {
+            bonus += 4; // Mid-majors who offer first get enhanced loyalty
+        }
+    } else {
+        // 2nd and 3rd offers get smaller relationship bonus
+        const earlyTeams = recruit.earlyOfferTeams || [];
+        const position = earlyTeams.indexOf(teamName);
+        if (position === 1) {
+            // 2nd offer: +4 base decaying to +2
+            const weeksSinceOffer = currentWeek - (recruit.firstOfferWeek ?? 0);
+            bonus += Math.max(2, 4 - Math.floor(weeksSinceOffer / 2));
+        } else if (position === 2) {
+            // 3rd offer: +2 base decaying to +1
+            const weeksSinceOffer = currentWeek - (recruit.firstOfferWeek ?? 0);
+            bonus += Math.max(1, 2 - Math.floor(weeksSinceOffer / 3));
+        }
+    }
+    
+    // LATE BLUE BLOOD PENALTY: Elite schools waiting too long get penalized
+    if (teamPrestige >= 85 && currentWeek >= 6) {
+        const earlyTeams = recruit.earlyOfferTeams || [];
+        const offerCount = (recruit.cpuOffers?.length || 0) + (recruit.userHasOffered ? 1 : 0);
+        if (!earlyTeams.includes(teamName) && offerCount >= 5) {
+            // Recruits feel like a backup option
+            bonus -= 3;
+        }
+    }
+    
+    return bonus;
+};
+
 export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, context: { gameInSeason: number, isSigningPeriod?: boolean }, userCoachSkills?: string[]): number => {
         const prestige = team.recruitingPrestige ?? team.prestige ?? 50;
         // NOTE: Elite Fit mismatch (low academics / Family Feud personality) is now a WARNING shown in the modal,
@@ -5560,9 +5800,13 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
     const attributeBonus = attributeScores.reduce((sum, score) => sum + score, 0) * 4 * (0.9 + strictness * 0.4);
     const personalityBonus = personalityInterestBonuses[recruit.personalityTrait](team);
     const nilPriorityBonus = nilPriorityInterestBonuses[recruit.nilPriority](team);
+    
+    // Sponsor Alignment Bonus (NIL Model Enhancement)
+    const { bonus: sponsorAlignmentBonus } = getSponsorAlignmentBonus(recruit, team);
 
     // New Recruiting Logic (Archetypes & Dealbreakers)
     let archetypeBonus = 0;
+    let pipelineBonus = 0;
     
     if (team.pipelines) {
         const pipeline = team.pipelines.find(p => p.state === recruit.homeState);
@@ -5651,8 +5895,11 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
 	        pipelineBonus +
 	        archetypeBonus +
 	        proximityFactor +
+	        sponsorAlignmentBonus +
             personalityProximityBonus +
-	        clamp(recruit.teamMomentum?.[team.name] ?? 0, -20, 20) -
+	        clamp(recruit.teamMomentum?.[team.name] ?? 0, -20, 20) +
+	        getActionBonus(recruit, team.name) +
+	        getEarlyOfferBonus(recruit, team.name, context.gameInSeason, prestige) -
 	        dealbreakerPenalty;
 
 	    const pitchType = getActiveOfferPitchType(recruit, team.name);
@@ -5702,7 +5949,8 @@ export const calculateRecruitInterestScore = (recruit: Recruit, team: Team, cont
         rawScore = rawScore * 1.05; // +5% interest
     }
 
-	    return Math.round(clamp(rawScore, 1, 100));
+	    // Return full score - no upper clamp so action bonuses can increase score beyond 100
+	    return Math.round(Math.max(1, rawScore));
 };
 
 export const getRecruitWhyBadges = (
@@ -5748,6 +5996,11 @@ export const getRecruitWhyBadges = (
                 (recruit.favoredCoachStyle && team.headCoach?.style && recruit.favoredCoachStyle === team.headCoach.style ? 1 : 0),
         },
         { label: 'Signing Push', score: context.isSigningPeriod ? 0.6 : 0 },
+        // Sponsor Fit badge (NIL Model Enhancement)
+        { 
+            label: 'Sponsor Fit ✓', 
+            score: getSponsorAlignmentBonus(recruit, team).hasSponsorAlignment ? 0.8 : 0 
+        },
     ];
 
     return candidates
@@ -5813,14 +6066,25 @@ export const scheduleVisit = (recruit: Recruit, team: Team, week: number, allRec
     if (recruit.interest < 60) {
         return { success: false, message: 'Interest too low to schedule visit.' };
     }
+    
+    // NCAA rule: Recruits can only take 5 official visits total across all schools
+    const visitsUsed = recruit.officialVisitsUsed ?? 0;
+    if (visitsUsed >= 5) {
+        return { success: false, message: `${recruit.name} has used all 5 official visits allowed by NCAA rules.` };
+    }
 
     const visitsThisWeek = allRecruits.filter(r => r.visitWeek === week && r.visitStatus === 'Scheduled').length;
     if (visitsThisWeek >= 2) {
         return { success: false, message: `Already hosting 2 visits on week ${week}.` };
     }
 
-    const updatedRecruit = { ...recruit, visitStatus: 'Scheduled' as VisitStatus, visitWeek: week };
-    return { success: true, message: `Visit scheduled for week ${week}.`, updatedRecruit };
+    const updatedRecruit = { 
+        ...recruit, 
+        visitStatus: 'Scheduled' as VisitStatus, 
+        visitWeek: week,
+        officialVisitsUsed: visitsUsed + 1  // Increment the visit counter
+    };
+    return { success: true, message: `Visit scheduled for week ${week}. (${visitsUsed + 1}/5 visits used)`, updatedRecruit };
 };
 
 export const negativeRecruit = (recruit: Recruit, targetSchool: string, method: 'Rumors' | 'Violations' | 'Academics', coach: Coach): { success: boolean; message: string; interestPenalty: number, updatedCoach?: Coach } => {
@@ -6070,6 +6334,35 @@ export const processRecruitingWeek = (
             if (Math.random() < volatilityChance) {
                 const swing = Math.floor(Math.random() * 7) - 3; // -3 to +3
                 r.interest = normalizeInterest(r.interest + swing);
+            }
+        }
+    });
+
+    // NEGLECT PENALTY: Schools that ignore their commits risk losing them
+    // Committed school must maintain contact or lockStrength degrades
+    updatedRecruits.forEach((r: Recruit) => {
+        if (!r.verbalCommitment || r.isSigned) return;
+        
+        const committedSchool = r.verbalCommitment;
+        const lastContact = r.lastContactFromCommittedSchool ?? r.commitWeek ?? week;
+        const weeksSinceContact = week - lastContact;
+        
+        // Neglect penalty kicks in after 3 weeks of no contact
+        if (weeksSinceContact >= 3) {
+            const neglectPenalty = (weeksSinceContact - 2) * 0.05; // 0.05, 0.10, 0.15... per week
+            r.lockStrength = Math.max(0.1, (r.lockStrength ?? 0.5) - neglectPenalty);
+            
+            // Soft commits with very low lockStrength may decommit due to neglect
+            if (r.softCommitment && r.lockStrength < 0.25 && Math.random() < 0.15) {
+                r.lastRecruitingNews = `${r.name} has decommitted from ${committedSchool} citing lack of communication.`;
+                r.verbalCommitment = null;
+                r.softCommitment = false;
+                r.verbalLevel = 'NONE';
+                r.lockStrength = 0;
+                r.verbalDay = undefined;
+                r.recruitmentStage = 'Open';
+                if (!r.recruitingEvents) r.recruitingEvents = [];
+                r.recruitingEvents.push({ type: 'Decommit', week, from: committedSchool });
             }
         }
     });
@@ -6890,8 +7183,28 @@ export const processRecruitingWeek = (
                  else if (slots <= 2) scarcityMod = 4;
             }
 
-            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0) - pressureAdjustment - scarcityMod, 62, 92);
-            const shareGate = clamp(78 - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0) - Math.round(decisionPressure * 10) - scarcityMod * 2, 15, 78);
+            // STAR-BASED COMMITMENT THRESHOLDS
+            // 5-stars: More deliberate, need higher scores to commit
+            // 2-stars: Commit faster with lower thresholds (taking what they can get)
+            const starAdjustment = {
+                5: { scoreBonus: 6, shareBonus: 8 },    // Harder to commit
+                4: { scoreBonus: 2, shareBonus: 3 },    // Slightly harder
+                3: { scoreBonus: 0, shareBonus: 0 },    // Baseline
+                2: { scoreBonus: -8, shareBonus: -12 }, // Much easier to commit
+            }[r.stars] || { scoreBonus: 0, shareBonus: 0 };
+
+            // LATE-CYCLE BLUE BLOOD BONUS
+            // Elite programs (prestige 90+) get advantage in late season
+            let lateBlueBlooodBonus = 0;
+            if (leaderTeam && week >= 8) {
+                const leaderPrestige = leaderTeam.prestige ?? 50;
+                if (leaderPrestige >= 90) {
+                    lateBlueBlooodBonus = (week - 7) * 3; // +3, +6, +9 per week after week 8
+                }
+            }
+
+            const scoreGate = clamp((earlySeason ? 90 : midSeason ? 84 : 78) + starAdjustment.scoreBonus - Math.floor(offerCount / 4) * 2 - (packageCommitAdj ? 7 : 0) - pressureAdjustment - scarcityMod - lateBlueBlooodBonus, 58, 95);
+            const shareGate = clamp(78 + starAdjustment.shareBonus - offerCount * 4 - Math.round(week * 1.5) - (packageCommitAdj ? 12 : 0) - Math.round(decisionPressure * 10) - scarcityMod * 2 - lateBlueBlooodBonus, 12, 80);
             const leadGate = clamp((earlySeason ? 12 : midSeason ? 8 : 5) - Math.floor(offerCount / 6) - (packageCommitAdj ? 2 : 0) - Math.round(decisionPressure * 2) - Math.ceil(scarcityMod / 2), 1, 14);
 
             const canCommitThisWeek = week >= Math.max(1, minCommitWeek - (packageCommitAdj ? 1 : 0));
@@ -6959,6 +7272,7 @@ export const processRecruitingWeek = (
 
         // Package deal synchronization: if one commits and the other has a real shot at the same school,
         // they tend to commit together (or quickly follow).
+        // IMPORTANT: Twins/siblings with package deals should almost always commit together.
         updatedRecruits.forEach((r: Recruit) => {
             const committedTeam = r.verbalCommitment;
             if (!committedTeam) return;
@@ -6995,18 +7309,30 @@ export const processRecruitingWeek = (
                     temperatureMultiplier: getRecruitOfferShareTemperatureMultiplier(other),
                 });
                 const leader = otherOfferDetails[0]!;
+                const committedSchoolRank = otherOfferDetails.findIndex(o => o.name === committedTeam);
                 const committedScore = otherOfferDetails.find(o => o.name === committedTeam)?.score ?? 0;
                 const committedShare = shares.get(committedTeam) ?? 0;
                 const leaderShare = shares.get(leader.name) ?? 0;
                 const scoreGap = leader.score - committedScore;
 
-                // Only sync when the committed school is already a plausible top option.
-                const qualifies =
-                    (scoreGap <= 6 && committedScore >= 62) ||
-                    (committedShare >= Math.max(16, leaderShare - 8) && committedScore >= 58);
+                // RELAXED QUALIFICATION: For true package deals (twins/siblings), sync if:
+                // 1. The committed school is in their top 4 offers, OR
+                // 2. The score gap is <= 12 (significantly more lenient than before), OR
+                // 3. The committed school has a decent share (>= 10%)
+                const isTwinOrSibling = link.type === 'Twin' || link.type === 'Sibling';
+                const isTopFourChoice = committedSchoolRank >= 0 && committedSchoolRank < 4;
+                
+                const qualifies = isTwinOrSibling
+                    ? (isTopFourChoice || scoreGap <= 12 || committedShare >= 10)
+                    : (
+                        (scoreGap <= 6 && committedScore >= 62) ||
+                        (committedShare >= Math.max(16, leaderShare - 8) && committedScore >= 58)
+                    );
                 if (!qualifies) return;
 
-                const syncChance = clamp(0.45 + committedShare / 220 - scoreGap * 0.035, 0.25, 0.9);
+                // Higher sync chance for twins/siblings (they almost always go together)
+                const baseSyncChance = isTwinOrSibling ? 0.85 : 0.45;
+                const syncChance = clamp(baseSyncChance + committedShare / 220 - scoreGap * 0.025, isTwinOrSibling ? 0.70 : 0.25, 0.95);
                 if (Math.random() > syncChance) return;
 
                 other.verbalCommitment = committedTeam;
@@ -7126,31 +7452,21 @@ const calculateOfferInterestShares = (
         shares.set(offerDetails[0]!.name, 100);
         return shares;
     }
-    // Softmax over scores to get relative "interest" across options.
-    // Uses an adaptive temperature + deterministic tie-breaker jitter to avoid flat ties.
-    const seedKey = options?.seedKey || 'share';
-    const scores = offerDetails.map(o => o.score);
-    const maxScore = Math.max(...scores);
-    const minScore = Math.min(...scores);
-    const spread = maxScore - minScore;
-    const baseTemperature = options?.temperature ?? (7.5 - spread / 12);
-    const temperatureMultiplier = options?.temperatureMultiplier ?? 1;
-    const temperature = clamp(baseTemperature * temperatureMultiplier, 2.2, 10);
-
-    const adjusted = offerDetails.map(o => ({
-        name: o.name,
-        score: o.score + stableFloatBetween(`${seedKey}:${o.name}`, -0.65, 0.65),
-    }));
-    const maxAdj = Math.max(...adjusted.map(o => o.score));
-    const weights = adjusted.map(o => Math.exp((o.score - maxAdj) / temperature));
-    const denom = weights.reduce((sum, w) => sum + w, 0);
-    if (!Number.isFinite(denom) || denom <= 0) {
+    
+    // Simple proportional share: school's fit / total fit of all schools
+    const totalFit = offerDetails.reduce((sum, o) => sum + Math.max(o.score, 0), 0);
+    
+    if (totalFit <= 0) {
+        // Fallback to equal shares if all scores are zero or negative
         offerDetails.forEach(o => shares.set(o.name, 100 / offerDetails.length));
         return shares;
     }
-    offerDetails.forEach((o, idx) => {
-        shares.set(o.name, (weights[idx]! / denom) * 100);
+    
+    offerDetails.forEach(o => {
+        const share = (Math.max(o.score, 0) / totalFit) * 100;
+        shares.set(o.name, share);
     });
+    
     return shares;
 		};
 
@@ -7721,6 +8037,13 @@ export const updateSponsorContracts = (teams: Team[], sponsors: { [key in Sponso
         return calculateSponsorRevenueSnapshot({ ...team, sponsor: nike }).total;
     };
     const updatedTeams = teams.map(team => {
+        // OREGON SPECIAL CASE: Phil Knight's Nike has a permanent 50-year deal
+        // Oregon should never switch from Nike
+        if (team.name === 'Oregon' && team.sponsor?.name === 'Nike') {
+            // Keep contract at 50 years, never decrement
+            return { ...team, sponsorContractYearsRemaining: 50, sponsorContractLength: 50 };
+        }
+        
         const newTeam = { ...team, sponsorContractYearsRemaining: team.sponsorContractYearsRemaining - 1 };
         // newTeam.sponsorContractYearsRemaining -= 1; // This was incorrect
 
@@ -11468,7 +11791,8 @@ const processRecruitingDayActions = (
     recruitingWeek: number,
     currentDateISO: string,
     seasonStartISO: string,
-    userCoachSkills?: string[]
+    userCoachSkills?: string[],
+    scoutingReports?: { [recruitId: string]: number }
 ): Recruit[] => {
     const early = recruitingWeek <= 4;
     const mid = recruitingWeek > 4 && recruitingWeek <= 8;
@@ -11543,6 +11867,37 @@ const processRecruitingDayActions = (
         const baseInc = 0.009 + relationshipWeight * 0.01 + (r.softCommitment ? 0.002 : 0.006);
         r.lockStrength = clamp((r.lockStrength ?? 0) + baseInc, 0, 1);
         r.verbalLevel = r.softCommitment ? 'SOFT' : 'HARD';
+    });
+
+    // Daily passive auto-maintain for recruits with isAutoMaintained enabled
+    // Scout grade determines effectiveness: low grades can hurt, high grades help
+    updatedRecruits.forEach(r => {
+        if (!r.isAutoMaintained) return;
+        if (!r.userHasOffered) return; // Must have offer out
+        if (r.verbalCommitment) return; // Don't maintain committed recruits
+        
+        const scoutLevel = scoutingReports?.[r.id] || 0;
+        
+        // Calculate daily effect based on scout grade
+        // Level 0: -2 to +1 (risky), Level 1: 0 to +3, Level 2: +2 to +4, Level 3: +4 to +6
+        let minEffect: number, maxEffect: number;
+        switch (scoutLevel) {
+            case 0: minEffect = -2; maxEffect = 1; break;
+            case 1: minEffect = 0; maxEffect = 3; break;
+            case 2: minEffect = 2; maxEffect = 4; break;
+            case 3: minEffect = 4; maxEffect = 6; break;
+            default: minEffect = -2; maxEffect = 1;
+        }
+        
+        // Random daily effect
+        const effect = Math.floor(Math.random() * (maxEffect - minEffect + 1)) + minEffect;
+        
+        // Apply to scoutMaintainBonus in actionHistory
+        const history = { ...(r.actionHistory || {}) };
+        const teamHistory = history[userTeamName] || { maintains: 0, coachVisits: 0, officialVisit: false, scoutLevel: 0, negativeAgainst: [] };
+        const currentBonus = (teamHistory as any).scoutMaintainBonus || 0;
+        history[userTeamName] = { ...teamHistory, scoutMaintainBonus: currentBonus + effect };
+        r.actionHistory = history;
     });
 
     // Daily momentum decay so stale offers can cycle and the pool doesn't freeze after early season.
@@ -12121,20 +12476,20 @@ export const runDailySimulation = (
                 ? userGameEvent.payload.awayTeam
                 : userGameEvent.payload.homeTeam;
             const updatedRecruits = canRecruitDaily
-                ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+                ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills, state.userTeam?.scoutingReports)
                 : state.recruits;
             return { updatedState: { recruits: updatedRecruits, ...nbaUpdates }, messages: [`Game day against ${opponent}!`] };
         }
 
         const updatedRecruits = canRecruitDaily
-            ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+            ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills, state.userTeam?.scoutingReports)
             : state.recruits;
         return { updatedState: { recruits: updatedRecruits, ...nbaUpdates }, messages: [], shouldSimulateGamesToday: true };
     }
 
     const nextDate = addDaysISO(currentDate, 1);
     const updatedRecruits = canRecruitDaily
-        ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills)
+        ? processRecruitingDayActions(state.allTeams, state.recruits, state.userTeam!.name, recruitingWeek, currentDate, seasonStartISO, coachSkills, state.userTeam?.scoutingReports)
         : state.recruits;
     return { updatedState: { currentDate: nextDate, recruits: updatedRecruits, ...nbaUpdates }, messages: [] };
 };
@@ -13151,6 +13506,18 @@ export const detectPackageDeals = (recruits: Recruit[]): Recruit[] => {
             updated2.packageDealPartner = r1.id;
             updated1.packageDealActive = true;
             updated2.packageDealActive = true;
+            
+            // Sync AAU program: package deal partners should share the same AAU team
+            const sharedAauProgram = updated1.aauProgramName || updated2.aauProgramName;
+            const sharedAauSponsor = updated1.aauProgramSponsor || updated2.aauProgramSponsor;
+            if (sharedAauProgram) {
+                updated1.aauProgramName = sharedAauProgram;
+                updated2.aauProgramName = sharedAauProgram;
+            }
+            if (sharedAauSponsor) {
+                updated1.aauProgramSponsor = sharedAauSponsor;
+                updated2.aauProgramSponsor = sharedAauSponsor;
+            }
         } else if (group.length > 2) {
             // Multiple teammates - link first two for simplicity
             // Could be enhanced to create chains
@@ -13162,6 +13529,18 @@ export const detectPackageDeals = (recruits: Recruit[]): Recruit[] => {
             updated2.packageDealPartner = r1.id;
             updated1.packageDealActive = true;
             updated2.packageDealActive = true;
+            
+            // Sync AAU program for package deal partners
+            const sharedAauProgram = updated1.aauProgramName || updated2.aauProgramName;
+            const sharedAauSponsor = updated1.aauProgramSponsor || updated2.aauProgramSponsor;
+            if (sharedAauProgram) {
+                updated1.aauProgramName = sharedAauProgram;
+                updated2.aauProgramName = sharedAauProgram;
+            }
+            if (sharedAauSponsor) {
+                updated1.aauProgramSponsor = sharedAauSponsor;
+                updated2.aauProgramSponsor = sharedAauSponsor;
+            }
         }
     }
     

@@ -130,6 +130,9 @@ const TournamentView = ({
     const roundNames = ['First Four', 'Round of 64', 'Round of 32', 'Sweet 16', 'Elite 8', 'Final Four', 'Championship'];
     const maxRounds = roundNames.length;
 
+    // Track the last known round to detect when a new round was just simulated
+    const lastRoundRef = React.useRef<number | null>(null);
+
     useEffect(() => {
         if (!tournament) return;
 
@@ -151,8 +154,25 @@ const TournamentView = ({
             if (!tournament.championship || !tournament.championship.played) return 6;
             return 6; // Default to showing champion
         };
-        setSelectedRound(findFirstUnplayedRoundIndex());
-    }, [tournament]);
+
+        const nextRound = findFirstUnplayedRoundIndex();
+        
+        // If we're on a different round than the next unplayed one, delay the advance
+        // This gives time to view results before moving on
+        if (lastRoundRef.current !== null && lastRoundRef.current !== nextRound && selectedRound === lastRoundRef.current) {
+            const timer = setTimeout(() => {
+                setSelectedRound(nextRound);
+                lastRoundRef.current = nextRound;
+            }, 5000); // 5 second delay to view results
+            return () => clearTimeout(timer);
+        } else {
+            // Initial load or manual navigation - update immediately
+            if (lastRoundRef.current === null) {
+                setSelectedRound(nextRound);
+            }
+            lastRoundRef.current = nextRound;
+        }
+    }, [tournament, selectedRound]);
 
     if (!tournament) return <div>The regular season is not over yet.</div>;
     

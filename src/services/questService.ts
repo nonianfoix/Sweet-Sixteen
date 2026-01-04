@@ -60,7 +60,7 @@ export const generateSponsorQuests = (team: Team, week: number): SponsorQuest[] 
 
         quests.push({
             id: `quest-${week}-${i}-${Math.random().toString(36).substr(2,5)}`,
-            sponsor: team.sponsor.name,
+            sponsor: team.sponsor.name as SponsorName,
             title,
             description,
             type,

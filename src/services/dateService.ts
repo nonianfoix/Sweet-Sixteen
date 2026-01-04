@@ -1,4 +1,4 @@
-import { GameDate, ISODate, Month } from '../types';
+import { AnnualCalendar, GameDate, ISODate, Month } from '../types';
 
 export const MONTH_ORDER: Month[] = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -13,11 +13,33 @@ export const DAYS_IN_MONTH: Record<Month, number> = {
 };
 
 export enum SeasonPhase {
-    PRESEASON = 'PRESEASON',
-    REGULAR_SEASON = 'REGULAR_SEASON',
-    CONFERENCE_TOURNAMENT = 'CONFERENCE_TOURNAMENT',
-    NCAA_TOURNAMENT = 'NCAA_TOURNAMENT',
-    OFFSEASON = 'OFFSEASON'
+    // ===== College Basketball Phases =====
+    COLLEGE_PRESEASON = 'COLLEGE_PRESEASON',       // Oct 1 - Nov (exhibition games)
+    COLLEGE_REGULAR_SEASON = 'COLLEGE_REGULAR_SEASON', // Nov - Mar 1
+    CONFERENCE_TOURNAMENT = 'CONFERENCE_TOURNAMENT',   // ~Mar 10-15
+    NCAA_TOURNAMENT = 'NCAA_TOURNAMENT',               // ~Mar 18 - Apr 7
+    
+    // ===== College Offseason Phases =====
+    TRANSFER_PORTAL_SPRING = 'TRANSFER_PORTAL_SPRING', // Apr 15-30 (spring portal window)
+    COLLEGE_OFFSEASON = 'COLLEGE_OFFSEASON',           // Generic offseason (Apr-May)
+    COLLEGE_SUMMER = 'COLLEGE_SUMMER',                 // May-Aug (training, camps)
+    
+    // ===== NBA Phases =====
+    NBA_PRESEASON = 'NBA_PRESEASON',                   // Oct 7-21
+    NBA_REGULAR_SEASON = 'NBA_REGULAR_SEASON',         // Oct 22 - Apr 13
+    NBA_PLAY_IN = 'NBA_PLAY_IN',                       // Apr 15-19
+    NBA_PLAYOFFS = 'NBA_PLAYOFFS',                     // Apr 20 - Jun 20
+    NBA_DRAFT_WEEK = 'NBA_DRAFT_WEEK',                 // Jun 20-30
+    NBA_FREE_AGENCY = 'NBA_FREE_AGENCY',               // Jul 1 - Aug
+    
+    // ===== Special Events =====
+    NBA_ALL_STAR = 'NBA_ALL_STAR',                     // Feb weekend (mid-season break)
+    SUMMER_RECRUITING = 'SUMMER_RECRUITING',           // Jun 15 - Aug 15 (official visits)
+    
+    // ===== Legacy Aliases (for backward compatibility) =====
+    PRESEASON = 'PRESEASON',                           // Maps to COLLEGE_PRESEASON
+    REGULAR_SEASON = 'REGULAR_SEASON',                 // Maps to COLLEGE_REGULAR_SEASON
+    OFFSEASON = 'OFFSEASON'                            // Maps to COLLEGE_OFFSEASON
 }
 
 // Legacy fallback; canonical season starts are computed via `buildSeasonAnchors`.
@@ -207,3 +229,82 @@ export const getWeekNumber = (date: GameDate): number => {
     if (daysSinceStart < 0) return 0; // Preseason
     return Math.floor(daysSinceStart / 7) + 1;
 };
+
+/**
+ * Get the season phase based on the full annual calendar with precise date ranges.
+ * This is the new preferred method for phase detection when an AnnualCalendar is available.
+ * 
+ * @param dateISO Current date in ISO format
+ * @param calendar The annual calendar to use for date comparisons
+ * @returns The current SeasonPhase based on exact calendar dates
+ */
+export const getSeasonPhaseFromCalendar = (dateISO: ISODate, calendar: AnnualCalendar): SeasonPhase => {
+    // NBA phases (October - August of next year)
+    if (dateISO >= calendar.nbaPreseasonStart && dateISO < calendar.nbaSeasonStart) {
+        return SeasonPhase.NBA_PRESEASON;
+    }
+    if (dateISO >= calendar.nbaSeasonStart && dateISO < calendar.nbaAllStarBreakStart) {
+        return SeasonPhase.NBA_REGULAR_SEASON;
+    }
+    if (dateISO >= calendar.nbaAllStarBreakStart && dateISO <= calendar.nbaAllStarBreakEnd) {
+        return SeasonPhase.NBA_ALL_STAR;
+    }
+    if (dateISO > calendar.nbaAllStarBreakEnd && dateISO <= calendar.nbaRegularSeasonEnd) {
+        return SeasonPhase.NBA_REGULAR_SEASON;
+    }
+    if (dateISO >= calendar.nbaPlayInStart && dateISO <= calendar.nbaPlayInEnd) {
+        return SeasonPhase.NBA_PLAY_IN;
+    }
+    if (dateISO >= calendar.nbaPlayoffsStart && dateISO <= calendar.nbaFinalsEnd) {
+        return SeasonPhase.NBA_PLAYOFFS;
+    }
+    if (dateISO >= calendar.nbaDraftLottery && dateISO <= calendar.nbaDraft) {
+        return SeasonPhase.NBA_DRAFT_WEEK;
+    }
+    if (dateISO >= calendar.nbaFreeAgencyStart && dateISO <= calendar.nbaSummerLeagueEnd) {
+        return SeasonPhase.NBA_FREE_AGENCY;
+    }
+    
+    // College phases
+    if (dateISO < calendar.collegeSeasonStart) {
+        return SeasonPhase.COLLEGE_PRESEASON;
+    }
+    if (dateISO >= calendar.collegeSeasonStart && dateISO <= calendar.collegeRegularSeasonEnd) {
+        return SeasonPhase.COLLEGE_REGULAR_SEASON;
+    }
+    if (dateISO >= calendar.confTourneyStart && dateISO <= calendar.confTourneyEnd) {
+        return SeasonPhase.CONFERENCE_TOURNAMENT;
+    }
+    if (dateISO > calendar.confTourneyEnd && dateISO <= calendar.ncaaTournamentEnd) {
+        return SeasonPhase.NCAA_TOURNAMENT;
+    }
+    
+    // Transfer portal spring window
+    if (dateISO >= calendar.transferPortalWindow2Start && dateISO <= calendar.transferPortalWindow2End) {
+        return SeasonPhase.TRANSFER_PORTAL_SPRING;
+    }
+    
+    // Summer recruiting period
+    if (dateISO >= calendar.summerRecruitingStart && dateISO <= calendar.summerRecruitingEnd) {
+        return SeasonPhase.SUMMER_RECRUITING;
+    }
+    
+    // College summer (between end of spring portal and start of next preseason)
+    if (dateISO > calendar.transferPortalWindow2End && dateISO < calendar.nbaPreseasonStart) {
+        return SeasonPhase.COLLEGE_SUMMER;
+    }
+    
+    // Default to college offseason for any other dates (Apr 8 - Apr 15, etc.)
+    return SeasonPhase.COLLEGE_OFFSEASON;
+};
+
+/**
+ * Check if the transfer portal is currently open based on the calendar.
+ */
+export const isTransferPortalOpen = (dateISO: ISODate, calendar: AnnualCalendar): boolean => {
+    return (
+        (dateISO >= calendar.transferPortalWindow1Start && dateISO <= calendar.transferPortalWindow1End) ||
+        (dateISO >= calendar.transferPortalWindow2Start && dateISO <= calendar.transferPortalWindow2End)
+    );
+};
+

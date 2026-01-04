@@ -11,7 +11,7 @@ const styles = {
         color: 'white',
         padding: '10px 20px',
         borderRadius: '5px',
-        zIndex: 2000,
+        zIndex: 100000,
         fontSize: '0.8rem',
         border: '2px solid white',
     },

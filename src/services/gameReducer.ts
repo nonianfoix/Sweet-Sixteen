@@ -2085,7 +2085,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 gameLogs: [...newState.gameLogs, ...gameLogs],
                 currentUserTeamAttendance: dedupeAttendanceRecords([...newState.currentUserTeamAttendance, ...newUserTeamAttendance]),
                 coach: updatedCoach,
-                recruits: updatedRecruits,
+                recruits: updatedRecruits.map(r => {
+                    const userTeamName = state.userTeam?.name;
+                    if (!userTeamName || !r.actionHistory?.[userTeamName]) return r;
+                    return {
+                        ...r,
+                        actionHistory: {
+                            ...r.actionHistory,
+                            [userTeamName]: {
+                                ...r.actionHistory[userTeamName],
+                                maintains: 0
+                            }
+                        }
+                    };
+                }),
                 timeline: [...(newState.timeline || []), ...recruitingEvents],
             };
         }
@@ -2250,48 +2263,25 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const autoTrainingEvents: string[] = [];
 
       if (state.autoTrainingEnabled && newUserTeam) {
-          // Auto-spend points if none are spent and no players are targeted
-          if (state.trainingPointsUsedThisWeek === 0 && !newUserTeam.roster.some(p => p.isTargeted)) {
-              let autoSpendPoints = getTrainingPoints(state.userTeam);
-              const trainingCost = 3;
-              let rosterForAutoTrain = [...newUserTeam.roster];
-
-              while(autoSpendPoints >= trainingCost) {
-                  const trainablePlayers = rosterForAutoTrain.filter(p => p.overall < p.potential);
-                  if (trainablePlayers.length === 0) break;
-
-                  const randomPlayer = trainablePlayers[Math.floor(Math.random() * trainablePlayers.length)];
-                  const randomStat = AUTO_TRAINING_STAT_KEYS[Math.floor(Math.random() * AUTO_TRAINING_STAT_KEYS.length)];
-
-                  if (randomPlayer.stats[randomStat] < 99) {
-                      randomPlayer.stats[randomStat]++;
-                      randomPlayer.overall = calculateOverall(randomPlayer.stats);
-                      autoSpendPoints -= trainingCost;
-                      autoTrainingEvents.push(`${randomPlayer.name} +1 ${TRAINING_STAT_LABELS[randomStat]} (Idle boost)`);
-                  } else {
-                      break;
-                  }
-              }
-              newUserTeam.roster = rosterForAutoTrain;
-          }
-
-          // Auto-training for targeted players
-          let currentTrainingPoints = getTrainingPoints(state.userTeam) - state.trainingPointsUsedThisWeek;
           const trainingCost = 3;
+          let currentTrainingPoints = getTrainingPoints(state.userTeam) - state.trainingPointsUsedThisWeek;
           let updatedUserTeamRoster = [...newUserTeam.roster];
 
+          // Phase 1: Targeted Players
           while (currentTrainingPoints >= trainingCost) {
-              let trainedThisIteration = false;
-              const trainablePlayers = updatedUserTeamRoster
+              const trainableTargets = updatedUserTeamRoster
                   .filter(p => p.isTargeted && p.overall < 99)
                   .sort((a, b) => a.overall - b.overall);
 
-              if (trainablePlayers.length === 0) break;
+              if (trainableTargets.length === 0) break;
 
-              for (const player of trainablePlayers) {
+              let trainedInThisPass = false;
+              for (const player of trainableTargets) {
                   if (currentTrainingPoints < trainingCost) break;
 
                   const playerStats = { ...player.stats };
+                  // Sort stats by value (lowest first) to boost weaknesses, or just random/ordered?
+                  // Existing logic used orderedStatKeys sorted by value.
                   const orderedStatKeys = [...AUTO_TRAINING_STAT_KEYS].sort((a, b) => playerStats[a] - playerStats[b]);
 
                   let statImproved = false;
@@ -2302,21 +2292,38 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                           player.stats = playerStats;
                           player.overall = calculateOverall(playerStats);
                           autoTrainingEvents.push(`${player.name} +1 ${TRAINING_STAT_LABELS[stat]} (Targeted)`);
-                          trainedThisIteration = true;
                           statImproved = true;
+                          trainedInThisPass = true;
                           break;
                       }
                   }
 
                   if (!statImproved) {
-                      player.isTargeted = false;
-                  }
-
-                  if (player.overall >= 99) {
-                      player.isTargeted = false;
+                      player.isTargeted = false; // Stop targeting if maxed
                   }
               }
-              if (!trainedThisIteration) break;
+              if (!trainedInThisPass) break;
+          }
+
+          // Phase 2: Overflow (Random Players)
+          // Spend any remaining points on random trainable players
+          while (currentTrainingPoints >= trainingCost) {
+              const trainablePlayers = updatedUserTeamRoster.filter(p => p.overall < p.potential);
+              if (trainablePlayers.length === 0) break;
+
+              const randomPlayer = trainablePlayers[Math.floor(Math.random() * trainablePlayers.length)];
+              const randomStat = AUTO_TRAINING_STAT_KEYS[Math.floor(Math.random() * AUTO_TRAINING_STAT_KEYS.length)];
+
+              if (randomPlayer.stats[randomStat] < 99) {
+                  randomPlayer.stats[randomStat]++;
+                  currentTrainingPoints -= trainingCost;
+                  randomPlayer.overall = calculateOverall(randomPlayer.stats);
+                  autoTrainingEvents.push(`${randomPlayer.name} +1 ${TRAINING_STAT_LABELS[randomStat]} (Idle boost)`);
+              }
+               // Note: If random stat is 99, loop continues and tries again. 
+               // Potential infinite loop if all stats maxed but overall < potential? 
+               // Unlikely given `p.overall < p.potential` check, but good to add safety.
+               // Let's add a safety counter or check specific stat validity
           }
           newUserTeam.roster = updatedUserTeamRoster;
       }
@@ -3182,8 +3189,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ...state,
             userTeam: updatedUserTeam,
             allTeams: state.allTeams.map(t => t.name === updatedUserTeam.name ? updatedUserTeam : t),
+            recruits: state.recruits.map(r => {
+                if (r.id !== recruitId) return r;
+                // Track scoutLevel in actionHistory for SHARE calculation
+                const teamName = state.userTeam!.name;
+                const history = { ...(r.actionHistory || {}) };
+                const teamHistory = history[teamName] || { maintains: 0, coachVisits: 0, officialVisit: false, scoutLevel: 0, negativeAgainst: [] };
+                history[teamName] = { ...teamHistory, scoutLevel: newLevel };
+                return { ...r, actionHistory: history };
+            }),
             contactsMadeThisWeek: state.contactsMadeThisWeek + cost,
-            toastMessage: `Scouting level increased to ${newLevel}. (-$${financialCost})`,
+            toastMessage: `Scouting level increased to ${newLevel}. (+${newLevel * 5} action bonus, -$${financialCost})`,
         };
     }
     case 'CONTACT_RECRUIT': {
@@ -3244,13 +3260,79 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	          // User contacts have higher impact than CPU contacts (+4 to +6 vs CPU's +2 to +4)
 	          const userMomentumBoost = 4 + Math.floor(Math.random() * 3); // 4, 5, or 6
 	          teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + userMomentumBoost, -20, 25);
-	          return { ...r, interest: newInterest, teamMomentum, lastUserContactWeek: state.week };
+	          // Track maintains in actionHistory for SHARE calculation (only when maintaining existing offer)
+	          const history = { ...(r.actionHistory || {}) };
+	          if (r.userHasOffered) {
+	              const teamHistory = history[teamName] || { maintains: 0, coachVisits: 0, officialVisit: false, scoutLevel: 0, negativeAgainst: [] };
+	              const oldMaintains = teamHistory.maintains || 0;
+	              const newMaintainCount = Math.min(5, oldMaintains + 1);
+	              console.log(`[CONTACT_RECRUIT] ${teamName} maintains: ${oldMaintains} -> ${newMaintainCount}`);
+	              history[teamName] = { ...teamHistory, maintains: newMaintainCount };
+	          }
+	          // Track last contact for commits (prevents neglect penalty)
+	          const isCommittedToUser = r.verbalCommitment === teamName;
+	          const lastContactFromCommittedSchool = isCommittedToUser ? state.week : r.lastContactFromCommittedSchool;
+	          return { ...r, interest: newInterest, teamMomentum, actionHistory: history, lastUserContactWeek: state.week, lastContactFromCommittedSchool };
 	        }),
 	        contactsMadeThisWeek: state.contactsMadeThisWeek + 1,
+	        toastMessage: (() => {
+	          const tr = state.recruits.find(r => r.id === action.payload.recruitId);
+	          if (!tr) return 'Contact made.';
+	          const teamName = state.userTeam!.name;
+	          const isMaintain = !!tr.userHasOffered;
+	          const curMaintains = (tr.actionHistory?.[teamName]?.maintains || 0);
+	          const newMaintains = isMaintain ? Math.min(5, curMaintains + 1) : curMaintains;
+	          const bonus = newMaintains * 4;
+	          return isMaintain 
+	            ? `Maintain contact! (${newMaintains}/5, +${bonus} action bonus)`
+	            : 'Contact made.';
+	        })(),
 	      };
 	    }
+    case 'TOGGLE_AUTO_MAINTAIN': {
+        // Toggle scout-based auto-maintain for a recruit
+        // When enabled, scouts will passively maintain relationships during daily simulation
+        if (!state.userTeam) return state;
+        
+        const recruit = state.recruits.find(r => r.id === action.payload.recruitId);
+        if (!recruit) return state;
+        
+        // Must have offer out to enable auto-maintain
+        if (!recruit.userHasOffered) {
+            return { ...state, toastMessage: 'Must have an offer out to enable scout maintain.' };
+        }
+        
+        const newValue = !recruit.isAutoMaintained;
+        
+        // Calculate composite scout level including staff quality (matches button display logic)
+        const recruitScoutLvl = recruit.actionHistory?.[state.userTeam.name]?.scoutLevel || 0;
+        const gradeBonusMap: Record<string, number> = { 'A': 1, 'B': 0.5, 'C': 0.25, 'D': 0 };
+        const staffScoutBonus = Math.min(2, (state.userTeam?.staff?.scouts || []).reduce((sum, s) => sum + (gradeBonusMap[s.grade] || 0), 0));
+        const scoutLevel = Math.min(3, recruitScoutLvl + Math.floor(staffScoutBonus));
+        const scoutGradeLabel = staffScoutBonus >= 1.5 ? 'A+' : staffScoutBonus >= 1 ? 'A' : staffScoutBonus >= 0.5 ? 'B' : 'C';
+        
+        const riskText = scoutLevel >= 2 ? '✅ Safe' : scoutLevel === 1 ? '⚠️ Moderate' : '❌ Risky';
+        
+        return {
+            ...state,
+            recruits: state.recruits.map(r => 
+                r.id === recruit.id ? { ...r, isAutoMaintained: newValue } : r
+            ),
+            toastMessage: newValue 
+                ? `Scout maintain enabled | Staff: ${scoutGradeLabel} | Intel: ${recruitScoutLvl}/3 | ${riskText}` 
+                : 'Scout maintain disabled.',
+        };
+    }
     case 'COACH_VISIT': {
         if (!state.userTeam) return state;
+        
+        // Check if coach visit already done (one-time only)
+        const targetRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
+        const existingVisits = targetRecruit?.actionHistory?.[state.userTeam.name]?.coachVisits || 0;
+        if (existingVisits >= 1) {
+            return { ...state, toastMessage: 'Coach visit already completed for this recruit.' };
+        }
+        
         const visitCost = 5;
         const contactPoints = getContactPoints(state.userTeam);
         if (state.contactsMadeThisWeek + visitCost > contactPoints) {
@@ -3303,7 +3385,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 		                teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 4, -20, 20);
 		                const visitHistory = [...(r.visitHistory || [])];
 		                visitHistory.push({ teamName, week: state.week, kind: 'Home', outcome: 'Positive' });
-		                return { ...r, interest: newInterest, teamMomentum, visitHistory, lastUserContactWeek: state.week };
+		                // Track coachVisits in actionHistory for SHARE calculation
+		                const history = { ...(r.actionHistory || {}) };
+		                const teamHistory = history[teamName] || { maintains: 0, coachVisits: 0, officialVisit: false, scoutLevel: 0, negativeAgainst: [] };
+		                const newVisitCount = 1; // One-time only
+		                history[teamName] = { ...teamHistory, coachVisits: newVisitCount };
+		                return { ...r, interest: newInterest, teamMomentum, visitHistory, actionHistory: history, lastUserContactWeek: state.week };
 		            }),
 	            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
 	            toastMessage: `Home visit complete. (-$${financialCost})`,
@@ -3318,6 +3405,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             return {
                 ...state,
                 toastMessage: `Not enough contacts to schedule an official visit (${visitCost} needed).`
+            };
+        }
+
+        // NCAA rule: Recruits can only take 5 official visits total across all schools
+        const targetRecruit = state.recruits.find(r => r.id === action.payload.recruitId);
+        const visitsUsed = targetRecruit?.officialVisitsUsed ?? 0;
+        if (visitsUsed >= 5) {
+            return {
+                ...state,
+                toastMessage: `${targetRecruit?.name || 'Recruit'} has used all 5 official visits allowed by NCAA rules.`
             };
         }
 
@@ -3360,12 +3457,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 		                    teamMomentum[teamName] = clamp((teamMomentum[teamName] ?? 0) + 2, -20, 20);
 		                    const visitHistory = [...(r.visitHistory || [])];
 		                    visitHistory.push({ teamName, week: action.payload.week, kind: 'Official' });
-		                    return { ...r, visitStatus: 'Scheduled', visitWeek: action.payload.week, teamMomentum, visitHistory, lastUserContactWeek: state.week };
+		                    // Track officialVisit in actionHistory for SHARE calculation (+15 bonus)
+		                    const history = { ...(r.actionHistory || {}) };
+		                    const teamHistory = history[teamName] || { maintains: 0, coachVisits: 0, officialVisit: false, scoutLevel: 0, negativeAgainst: [] };
+		                    history[teamName] = { ...teamHistory, officialVisit: true };
+		                    // Increment the NCAA official visit counter (max 5 across all schools)
+		                    const newVisitsUsed = (r.officialVisitsUsed ?? 0) + 1;
+		                    return { ...r, visitStatus: 'Scheduled', visitWeek: action.payload.week, teamMomentum, visitHistory, actionHistory: history, lastUserContactWeek: state.week, officialVisitsUsed: newVisitsUsed };
 		                }
 		                return r;
 		            }),
 	            contactsMadeThisWeek: state.contactsMadeThisWeek + visitCost,
-	            toastMessage: `Official visit for ${state.recruits.find(r => r.id === action.payload.recruitId)?.name} scheduled for Week ${action.payload.week}. (-$${financialCost})`,
+	            toastMessage: `Official visit for ${state.recruits.find(r => r.id === action.payload.recruitId)?.name} scheduled for Week ${action.payload.week}. (${visitsUsed + 1}/5 visits used, -$${financialCost})`,
 	        };
 	    }
 	    case 'OFFER_SCHOLARSHIP': {
@@ -3458,7 +3561,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 	                const offerHistory = [...(r.offerHistory || [])];
 	                offerHistory.push({ teamName, week: state.week, date: state.currentDate, pitchType, source: 'User' });
 	                const coachabilityMultiplier = 0.9 + clamp((r.coachability ?? 60) / 250, 0, 0.6);
-	                return { ...r, userHasOffered: true, interest: normalizeInterest(r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week, activeOfferCount: (r.cpuOffers?.length || 0) + 1 };
+	                
+	                // EARLY OFFER LOYALTY TRACKING
+	                // Track first offer (highest loyalty bonus)
+	                const isFirstOffer = !r.firstOfferTeam;
+	                const firstOfferTeam = isFirstOffer ? teamName : r.firstOfferTeam;
+	                const firstOfferWeek = isFirstOffer ? state.week : r.firstOfferWeek;
+	                
+	                // Track first 3 offers (for relationship tier bonuses)
+	                const currentEarlyOffers = r.earlyOfferTeams || [];
+	                const earlyOfferTeams = currentEarlyOffers.length < 3 && !currentEarlyOffers.includes(teamName)
+	                    ? [...currentEarlyOffers, teamName]
+	                    : currentEarlyOffers;
+	                
+	                return { ...r, userHasOffered: true, interest: normalizeInterest(r.interest + randomBetween(15, 25) * coachabilityMultiplier), teamMomentum, offerHistory, lastUserContactWeek: state.week, activeOfferCount: (r.cpuOffers?.length || 0) + 1, firstOfferTeam, firstOfferWeek, earlyOfferTeams };
 	            }
 
 	            if (packageDealLinkedIds.has(r.id) && !r.verbalCommitment && !r.declinedOffers?.includes(teamName)) {
@@ -3755,7 +3871,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             if (state.offSeasonAdvanced) {
                 return {
                     ...state,
-                    recruits: updatedRecruits,
+                    recruits: updatedRecruits.map(r => {
+                const userTeamName = state.userTeam?.name;
+                if (!userTeamName || !r.actionHistory?.[userTeamName]) return r;
+                return {
+                    ...r,
+                    actionHistory: {
+                        ...r.actionHistory,
+                        [userTeamName]: {
+                            ...r.actionHistory[userTeamName],
+                            maintains: 0
+                        }
+                    }
+                };
+            }),
                     contactsMadeThisWeek: 0,
                     signingPeriodDay: nextDay,
                     currentDate: nextDate,
@@ -3800,7 +3929,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
                 ...state,
                 allTeams: finalTeams,
                 userTeam: finalTeams.find(t => t.isUserTeam) || null,
-                recruits: updatedRecruits,
+                recruits: updatedRecruits.map(r => {
+                const userTeamName = state.userTeam?.name;
+                if (!userTeamName || !r.actionHistory?.[userTeamName]) return r;
+                return {
+                    ...r,
+                    actionHistory: {
+                        ...r.actionHistory,
+                        [userTeamName]: {
+                            ...r.actionHistory[userTeamName],
+                            maintains: 0
+                        }
+                    }
+                };
+            }),
                 contactsMadeThisWeek: 0,
                 signingPeriodDay: nextDay,
                 currentDate: nextDate,
@@ -3854,7 +3996,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         return {
             ...state,
-            recruits: updatedRecruits,
+            recruits: updatedRecruits.map(r => {
+                const userTeamName = state.userTeam?.name;
+                if (!userTeamName || !r.actionHistory?.[userTeamName]) return r;
+                return {
+                    ...r,
+                    actionHistory: {
+                        ...r.actionHistory,
+                        [userTeamName]: {
+                            ...r.actionHistory[userTeamName],
+                            maintains: 0
+                        }
+                    }
+                };
+            }),
             signingPeriodDay: nextDay,
             contactsMadeThisWeek: 0,
             toastMessage: `Day ${state.signingPeriodDay} Complete`,
@@ -4746,7 +4901,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             currentUserTeamAttendance: dedupeAttendanceRecords([...state.currentUserTeamAttendance, ...newUserTeamAttendance]),
             coach: updatedCoach,
             toastMessage: 'Simulated game.',
-            recruits: updatedRecruits,
+            recruits: updatedRecruits.map(r => {
+                const userTeamName = state.userTeam?.name;
+                if (!userTeamName || !r.actionHistory?.[userTeamName]) return r;
+                return {
+                    ...r,
+                    actionHistory: {
+                        ...r.actionHistory,
+                        [userTeamName]: {
+                            ...r.actionHistory[userTeamName],
+                            maintains: 0
+                        }
+                    }
+                };
+            }),
             timeline: [...(state.timeline || []), ...recruitingEvents],
         };
     }

@@ -26,12 +26,14 @@ const OffersModal = (props: {
     onCoachVisit?: () => void; 
     onScheduleOfficialVisit?: () => void; 
     onScout?: () => void; 
-    onNegativeRecruit?: () => void; 
+    onNegativeRecruit?: (targetSchool: string, method: 'Rumors' | 'Violations' | 'Academics') => void; 
     onClose: () => void; 
     timeline?: TimelineEvent[]; 
+    upcomingHomeGames?: { week: number; opponent: string; isRivalry: boolean }[];
 }) => {
+    const { onOpenRecruitId, ...rest } = props;
     return (
-        <RecruitOfferDetailsModal {...props} />
+        <RecruitOfferDetailsModal {...rest} onOpenRecruit={onOpenRecruitId} />
     );
 };
 

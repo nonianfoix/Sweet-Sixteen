@@ -746,11 +746,11 @@ export const styles: { [key: string]: React.CSSProperties } = {
         boxShadow: '4px 4px 0 #0f172a',
     },
     th: {
-        padding: '10px 12px',
+        padding: '12px 14px',
         borderBottom: '2px solid #0f172a',
         textAlign: 'left',
         fontWeight: 900,
-        fontSize: '11px',
+        fontSize: '14px',
         textTransform: 'uppercase',
         letterSpacing: '0.05em',
     },
@@ -817,7 +817,7 @@ export const styles: { [key: string]: React.CSSProperties } = {
         fontSize: '0.7rem'
     },
     recruitingThead: {
-        fontSize: '0.55rem',
+        fontSize: '0.75rem',
     },
     linkButton: {
         background: 'none',
@@ -899,7 +899,7 @@ export const styles: { [key: string]: React.CSSProperties } = {
         maxHeight: '95vh',
         background: '#f8fafc',
         borderRadius: '8px',
-        overflow: 'hidden',
+        overflowY: 'auto',
         boxShadow: '10px 10px 0 #0f172a',
         border: '4px solid #0f172a',
         display: 'flex',
@@ -1110,8 +1110,7 @@ export const styles: { [key: string]: React.CSSProperties } = {
         flexDirection: 'column',
         gap: '2px',
         fontSize: '0.5rem',
-        maxHeight: '260px',
-        overflowY: 'auto',
+        // Removed maxHeight/overflow to allow full extension
         paddingRight: '6px',
     } as React.CSSProperties,
     conferenceStandingsHeader: {
@@ -1132,8 +1131,7 @@ export const styles: { [key: string]: React.CSSProperties } = {
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
-        overflowY: 'auto',
-        maxHeight: 'calc(95vh - 340px)',
+        // Removed fixed height/scroll to allow full extension
         paddingRight: '6px',
     } as React.CSSProperties,
     conferenceStandingsRow: {
@@ -1276,11 +1274,13 @@ export const styles: { [key: string]: React.CSSProperties } = {
     conferenceHubPill: {
         display: 'inline-block',
         border: '2px solid #0f172a',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#fef3c7',
+        color: '#92400e',
         padding: '2px 4px',
         marginLeft: '6px',
         fontSize: '0.45rem',
         lineHeight: 1,
+        fontWeight: 700,
     } as React.CSSProperties,
     conferenceHubEmpty: {
         fontSize: '0.55rem',

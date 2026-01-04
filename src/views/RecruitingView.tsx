@@ -9,7 +9,7 @@ import type {
     Team,
     OfferPitchType,
 } from '../types';
-import { getSchoolLogoUrl } from '../services/utils';
+import { getSchoolLogoUrl, bestTextColor } from '../services/utils';
 import { getInterestTier, calculateAvailableScholarships, getPositionDepthSummary, formatPlayerHeight } from '../services/gameReducer';
 import { formatPotentialValue, normalizeInterest } from '../services/gameUtils';
 import { calculateRecruitInterestScore, calculateRecruitInterestBreakdown, getRecruitWhyBadges, estimateRecruitDistanceMilesToTeam, getRecruitRegionForState, buildRecruitOfferShortlist, getRecruitOfferShareTemperatureMultiplier, calculateTeamNeeds, getContactPoints } from '../services/gameService';
@@ -29,6 +29,87 @@ const styles: { [key: string]: React.CSSProperties } = {
         border: 'none',
         cursor: 'pointer',
         fontWeight: 'bold',
+    },
+    tableContainer: {
+        width: '100%',
+        overflowX: 'auto',
+    },
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse',
+        marginTop: '10px',
+        fontSize: '0.65rem',
+        tableLayout: 'fixed', // Enforce fixed widths
+    },
+    th: {
+        padding: '8px',
+        textAlign: 'left',
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        fontSize: '0.8rem',
+    },
+    td: {
+        padding: '8px 4px',
+        borderBottom: '1px solid #e2e8f0',
+        height: '50px', // Force taller rows
+        verticalAlign: 'middle',
+    },
+    recruitingThead: {
+        borderRadius: '8px',
+        overflow: 'hidden',
+    },
+    interestCell: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+    },
+    interestBarTrack: {
+        width: '100%',
+        height: '4px',
+        backgroundColor: '#e2e8f0',
+        borderRadius: '2px',
+        overflow: 'hidden',
+    },
+    interestBarFill: {
+        height: '100%',
+        borderRadius: '2px',
+    },
+    interestBadge: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: '0.6rem',
+        fontWeight: 600,
+    },
+    modalBackdrop: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        padding: '24px',
+        borderRadius: '8px',
+        maxWidth: '500px',
+        width: '90%',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    },
+    smallButton: {
+        padding: '6px 12px',
+        borderRadius: '4px',
+        border: '1px solid #ddd',
+        backgroundColor: 'white',
+        cursor: 'pointer',
+        fontSize: '0.75rem',
     },
 };
 
@@ -76,33 +157,65 @@ const StarRating = ({ stars }: { stars: number }) => {
 
 	const CommitmentStatus = ({ teamName, teamRank, isSigningPeriod, isSoftCommit }: { teamName: string, teamRank?: number, isSigningPeriod: boolean, isSoftCommit?: boolean }) => {
 	    const teamColors = SCHOOL_COLORS[teamName] || { primary: '#C0C0C0', secondary: '#808080', text: '#000000' };
+	    const logoUrl = getSchoolLogoUrl(teamName);
+	    const textColor = bestTextColor(teamColors.primary);
 
-    const style: React.CSSProperties = {
-        ...styles.button,
-        backgroundColor: teamColors.primary,
-        color: teamColors.text,
-        padding: '5px',
-        fontSize: '0.5rem',
-        textAlign: 'center',
-        cursor: 'default',
-        width: '100%',
-        minWidth: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        lineHeight: '1.2',
-    };
-
-	    const [label1, label2] = isSigningPeriod ? ['Signed', 'With'] : [isSoftCommit ? 'Soft' : 'Hard', 'Committed'];
+	    const label = isSigningPeriod ? 'SIGNED' : (isSoftCommit ? 'SOFT' : 'COMMITTED');
 
     return (
-        <div style={style}>
-            <span>{label1}</span>
-            <span>{label2}</span>
-            <span style={{ fontWeight: 'bold' }}>{teamName}</span>
-            {teamRank && (
-                <span style={{ fontWeight: 'bold', fontSize: '0.6rem', marginLeft: '3px' }}>#{teamRank}</span>
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 8px',
+            backgroundColor: teamColors.primary,
+            border: '2px solid #0f172a',
+            borderRadius: '4px',
+            boxShadow: '2px 2px 0 #0f172a',
+            minWidth: '80px',
+            maxWidth: '140px',
+        }}>
+            {logoUrl ? (
+                <img src={logoUrl} alt="" style={{
+                    width: '22px',
+                    height: '22px',
+                    objectFit: 'contain',
+                }} />
+            ) : (
+                <div style={{ 
+                    width: '22px', 
+                    height: '22px', 
+                    borderRadius: '50%', 
+                    background: 'rgba(255,255,255,0.2)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontSize: '10px', 
+                    fontWeight: 900, 
+                    color: textColor,
+                }}>
+                    {teamName.charAt(0)}
+                </div>
             )}
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                <span style={{
+                    fontSize: '8px',
+                    fontWeight: 700,
+                    color: textColor,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    opacity: 0.85,
+                }}>{label}</span>
+                <span style={{
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    color: textColor,
+                    textShadow: '0 1px 1px rgba(0,0,0,0.2)',
+                    lineHeight: '1.1',
+                    wordBreak: 'break-word',
+                    whiteSpace: 'normal',
+                }}>{teamName}{teamRank ? ` #${teamRank}` : ''}</span>
+            </div>
         </div>
     );
 };
@@ -275,7 +388,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 
     const renderSortArrow = (key: SortableKey) => {
         if (sortConfig.key !== key) return null;
-        return sortConfig.direction === 'ascending' ? '?' : '?';
+        return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
     };
 
     if (!state.userTeam) return null;
@@ -497,18 +610,38 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                     }}
                     contactPointsUsed={state.contactsMadeThisWeek}
                     contactPointsMax={getContactPoints(state.userTeam)}
-                    scoutLevel={state.userTeam?.scoutingReports?.[viewingOffersFor.id] || 0}
+                    scoutLevel={viewingOffersFor.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0}
                     actionsDisabled={!!viewingOffersFor.verbalCommitment && viewingOffersFor.verbalCommitment !== state.userTeam.name}
                     onContactRecruit={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: viewingOffersFor.id } })}
                     startOfferBuilder={viewingOffersStartOfferBuilder}
                     onOfferScholarship={(pitchType) => dispatch({ type: 'OFFER_SCHOLARSHIP', payload: { recruitId: viewingOffersFor.id, pitchType } })}
                     onPullOffer={() => dispatch({ type: 'PULL_SCHOLARSHIP', payload: { recruitId: viewingOffersFor.id } })}
                     onCoachVisit={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: viewingOffersFor.id } })}
-                    onScheduleOfficialVisit={() => setSchedulingVisitFor(viewingOffersFor)}
+                    onScheduleOfficialVisit={(week) => dispatch({ type: 'SCHEDULE_VISIT', payload: { recruitId: viewingOffersFor.id, week } })}
                     onScout={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: viewingOffersFor.id, cost: 3 } })}
-                    onNegativeRecruit={() => setNegativeRecruitingFor(viewingOffersFor)}
+                    onNegativeRecruit={(targetSchool, method) => dispatch({ type: 'NEGATIVE_RECRUIT', payload: { recruitId: viewingOffersFor.id, targetSchool, method } })}
                     onClose={() => { setViewingOffersRecruitId(null); setViewingOffersStartOfferBuilder(false); }}
                     timeline={(state.timeline || []).filter(e => e.recruitId === viewingOffersFor.id)}
+                    upcomingHomeGames={(() => {
+                        if (!state.userTeam || !state.schedule) return [];
+                        const games: { week: number; opponent: string; isRivalry: boolean }[] = [];
+                        // Iterate from current week through end of schedule
+                        // Schedule is 0-indexed (0=Week 1), state.week is 1-indexed
+                        const startIdx = Math.max(0, (state.week || 1) - 1);
+                        for (let i = startIdx; i < state.schedule.length; i++) {
+                            const weekGames = state.schedule[i];
+                            if (!weekGames) continue;
+                            const homeGames = weekGames.filter(g => g.homeTeam === state.userTeam!.name);
+                            homeGames.forEach(g => {
+                                games.push({
+                                    week: i + 1,
+                                    opponent: g.awayTeam,
+                                    isRivalry: g.isRivalry || false
+                                });
+                            });
+                        }
+                        return games;
+                    })()}
 	                />
 	            )}
 	            {negativeRecruitingFor && (
@@ -651,15 +784,16 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                     {/* Checkbox toggles */}
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: 'auto' }}>
                         {[
-                            { key: 'committed', label: '?? Com', checked: hideVerballyCommitted, setter: setHideVerballyCommitted },
-                            { key: 'signed', label: '?? Sig', checked: hideSigned, setter: setHideSigned },
-                            { key: 'mycommits', label: '? Mine', checked: showUserCommitsOnly, setter: setShowUserCommitsOnly },
-                            { key: 'targets', label: '??', checked: targetsOnly, setter: setTargetsOnly },
-                            { key: 'needs', label: '?? Fit', checked: needsFitOnly, setter: setNeedsFitOnly },
+                            { key: 'committed', label: '🚫 Com', title: 'Hide Verbally Committed Recruits', checked: hideVerballyCommitted, setter: setHideVerballyCommitted },
+                            { key: 'signed', label: '✍️ Sig', title: 'Hide Signed Recruits', checked: hideSigned, setter: setHideSigned },
+                            { key: 'mycommits', label: '⭐ Mine', title: 'Show Only My Commits', checked: showUserCommitsOnly, setter: setShowUserCommitsOnly },
+                            { key: 'targets', label: '🎯', title: 'Show Only Targeted Recruits', checked: targetsOnly, setter: setTargetsOnly },
+                            { key: 'needs', label: '✅ Fit', title: 'Show Only Recruits That Fit Team Needs', checked: needsFitOnly, setter: setNeedsFitOnly },
                         ].map(toggle => (
                             <button
                                 key={toggle.key}
                                 onClick={() => toggle.setter(!toggle.checked)}
+                                title={toggle.title}
                                 style={{
                                     padding: '4px 8px',
                                     fontSize: '0.6rem',
@@ -700,20 +834,20 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                <thead style={styles.recruitingThead}>
 	                    <tr>
 	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('rank')}>Rank {renderSortArrow('rank')}</th>
-	                        <th style={{...styles.th, width: '16%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
-	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
-	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
-	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
-	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
-	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
-	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
-	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
-	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Stage</th>
-	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Top 2</th>
-	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
-	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
+	                        <th style={{...styles.th, width: '12%', backgroundColor: colors.primary, color: colors.text}}>Name</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('stars')}>Stars</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text}}>Pos</th>
+	                        <th style={{...styles.th, width: '8%', backgroundColor: colors.primary, color: colors.text}}>Archetype</th>
+	                        <th style={{...styles.th, width: '3%', backgroundColor: colors.primary, color: colors.text}}>Ht</th>
+	                        <th style={{...styles.th, width: '3%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('overall')}>OVR {renderSortArrow('overall')}</th>
+	                        <th style={{...styles.th, width: '3%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('potential')}>Pot {renderSortArrow('potential')}</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text, cursor: 'pointer'}} onClick={() => requestSort('interest')}>Int {renderSortArrow('interest')}</th>
+	                        <th style={{...styles.th, width: '6%', backgroundColor: colors.primary, color: colors.text}}>Stage</th>
+	                        <th style={{...styles.th, width: '11%', backgroundColor: colors.primary, color: colors.text}}>Top 2</th>
+	                        <th style={{...styles.th, width: '11%', backgroundColor: colors.primary, color: colors.text}}>Status</th>
+	                        <th style={{...styles.th, width: '9%', backgroundColor: colors.primary, color: colors.text}}>Top Motivations</th>
 	                        <th style={{...styles.th, width: '10%', backgroundColor: colors.primary, color: colors.text}}>Actions</th>
-	                        <th style={{...styles.th, width: '5%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
+	                        <th style={{...styles.th, width: '4%', backgroundColor: colors.primary, color: colors.text}}>Target</th>
 	                    </tr>
 	                </thead>
                 <tbody>
@@ -726,37 +860,54 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                         const isCommittedToOther = !!r.verbalCommitment && !isCommittedToUser;
                         const isCommittedAndLocked = !!isSigningPeriod && !!r.verbalCommitment;
                         const committedTeamRank = r.verbalCommitment ? powerRankings.get(r.verbalCommitment) : undefined;
-
-                        const rowStyle: React.CSSProperties = {};
-                        if (isCommittedToUser) {
-                            rowStyle.backgroundColor = '#90EE90'; // Light Green for user commits
-                        } else if (hasUserDeclined) {
-                            rowStyle.backgroundColor = '#FFD2D2'; // Light Red for declines
-                        } else if (isSigningPeriod && isCommittedToOther) {
-                            rowStyle.backgroundColor = '#FFDAB9'; // Orange for signed with CPU
-                        } else if (isCommittedToOther) {
-                            rowStyle.backgroundColor = '#ADD8E6'; // Blue for verbal with CPU
-                        } else if (userHasOffered) {
-                            rowStyle.backgroundColor = '#FFFFAA'; // Yellow for offers
-                        }
+                        const userActionHistory = r.actionHistory?.[state.userTeam!.name];
+                        const maintainCount = userActionHistory?.maintains || 0;
+                        const usageLimitReached = userHasOffered && maintainCount >= 5;
+                        const hasCoachVisited = (userActionHistory?.coachVisits ?? 0) >= 1;
+                        const hasOfficialVisited = userActionHistory?.officialVisit === true;
 
                         const displayInterest = normalizeInterest(r.interest);
                         const interestTier = getInterestTier(displayInterest);
+                        
+                        // Get committed team's colors and logo for row styling
+                        const committedTeamColors = r.verbalCommitment 
+                            ? SCHOOL_COLORS[r.verbalCommitment] || { primary: '#C0C0C0', secondary: '#808080', text: '#000000' }
+                            : null;
+                        const committedTeamLogo = r.verbalCommitment ? getSchoolLogoUrl(r.verbalCommitment) : null;
+
+                        const rowStyle: React.CSSProperties = {
+                            position: 'relative',
+                            minHeight: '48px',
+                        };
+                        
+                        // Committed recruits get team color tint
+                        if (r.verbalCommitment && committedTeamColors) {
+                            // Use team primary color with transparency
+                            const hex = committedTeamColors.primary;
+                            const r2 = parseInt(hex.slice(1, 3), 16);
+                            const g = parseInt(hex.slice(3, 5), 16);
+                            const b = parseInt(hex.slice(5, 7), 16);
+                            rowStyle.backgroundColor = `rgba(${r2}, ${g}, ${b}, 0.25)`;
+                        } else if (hasUserDeclined) {
+                            rowStyle.backgroundColor = '#FFD2D2'; // Light Red for declines
+                        } else if (userHasOffered) {
+                            rowStyle.backgroundColor = '#FFFFAA'; // Yellow for offers
+                        }
 
                         return (
                             <tr key={r.id} style={rowStyle}>
                                 <td style={styles.td}>{rank ? `#${rank}` : 'UR'}</td>
                                 <td style={styles.td}>
-                                    <button onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={{ ...styles.linkButton, fontWeight: 'bold' }}>
+                                    <span onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={{ fontWeight: 'bold', color: 'black', cursor: 'pointer' }}>
                                         {r.name}
-                                    </button>
+                                    </span>
                                     {/* Package Deal Icon */}
                                     {r.packageDealPartner && (
                                         <span 
                                             title={`Package deal with teammate`} 
                                             style={{ marginLeft: '4px', cursor: 'help' }}
                                         >
-                                            ??
+                                            📦
                                         </span>
                                     )}
                                     {/* Hot/Cold Momentum Badges */}
@@ -765,7 +916,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                             title={`Hot! Momentum: +${r.teamMomentum[state.userTeam!.name]}`} 
                                             style={{ marginLeft: '4px', color: '#ef4444', fontWeight: 'bold' }}
                                         >
-                                            ??
+                                            🔥
                                         </span>
                                     )}
                                     {r.teamMomentum?.[state.userTeam!.name] != null && r.teamMomentum[state.userTeam!.name] < -5 && (
@@ -773,20 +924,20 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                             title={`Cold! Momentum: ${r.teamMomentum[state.userTeam!.name]}`} 
                                             style={{ marginLeft: '4px', color: '#3b82f6' }}
                                         >
-                                            ??
+                                            ❄️
                                         </span>
                                     )}
                                     {(r.hometownCity || r.hometownState || r.highSchoolName) && (
                                         <div
-                                            style={{ fontSize: '0.55rem', color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                            style={{ fontSize: '0.6rem', color: '#555', marginTop: '4px', lineHeight: '1.1', wordBreak: 'break-word' }}
                                             title={[r.hometownCity, r.hometownState].filter(Boolean).join(', ') + (r.highSchoolName ? ` - ${r.highSchoolName}` : '')}
                                         >
                                             {[r.hometownCity, r.hometownState].filter(Boolean).join(', ')}
                                             {r.highSchoolName ? ` - ${r.highSchoolName}` : ''}
                                         </div>
                                     )}
-                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>??</span>}
-                                    {(state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>??</span>}
+                                    {(r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 && r.isGem && <span title="Gem" style={{marginLeft: '5px'}}>💎</span>}
+                                    {(r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 && r.isBust && <span title="Bust" style={{marginLeft: '5px'}}>💀</span>}
 	        </td>
 	                                <td style={styles.td}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -794,7 +945,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                             {r.relationships?.map(rel => {
                                                 const label = `${rel.type}: ${rel.displayName}${rel.teamName ? ` (${rel.teamName})` : ''}`;
                                                 if (rel.type === 'Twin') return <img key={rel.personId} src={GeminiIcon} title={label} style={{ cursor: 'help', width: '18px', height: '18px' }} />;
-                                                if (rel.type === 'Sibling' || rel.type === 'Cousin') return <img key={rel.personId} src={TreeIcon} title={label} style={{ cursor: 'help', width: '18px', height: '18px' }} />;
+                                                if (rel.type === 'Sibling' || rel.type === 'Cousin') return <span key={rel.personId} title={label} style={{ cursor: 'help', fontSize: '16px', fontWeight: 'bold', marginLeft: '2px' }}>֎</span>;
                                                 return null;
                                             })}
                                         </div>
@@ -819,7 +970,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                <td style={styles.td}>
 	                                        {(() => {
 	                                            const top2 = topTwoByRecruitId.get(r.id);
-	                                            if (!top2?.leader) return '�';
+	                                            if (!top2?.leader) return null;
 	                                            return (
 	                                                <span title={top2.second ? `${top2.leader} / ${top2.second}` : top2.leader}>
 	                                                    <strong>{top2.leader}</strong>
@@ -834,8 +985,8 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
 	                                    ) : hasUserDeclined ? (
 	                                        <span style={{color: 'red'}}>Offer Declined</span>
 	                                    ) : totalOffers > 0 ? (
-	                                        <button onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={styles.linkButton}>{totalOffers} Offers</button>
-                                    ) : 'Undecided'}
+	                                        <span onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={{ cursor: 'pointer', color: 'black' }}>{totalOffers} Offers</span>
+                                    ) : (<span onClick={() => { setViewingOffersRecruitId(r.id); setViewingOffersStartOfferBuilder(false); }} style={{ cursor: 'pointer', color: 'black' }}>Undecided</span>)}
                                 </td>
                                 <td style={styles.td}>
                                     <MotivationDisplay motivations={r.motivations} />
@@ -851,18 +1002,18 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                                   border: '2px solid #0f172a',
                                                   background: userHasOffered ? '#ffffff' : '#fde047',
                                                   color: '#0f172a',
-                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || usageLimitReached || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
                                                   fontWeight: 900,
                                                   fontSize: '10px',
-                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
-                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || usageLimitReached || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || usageLimitReached || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)) ? 0.55 : 1,
                                                   whiteSpace: 'nowrap',
                                                 }}
                                                 onClick={() => dispatch({ type: 'CONTACT_RECRUIT', payload: { recruitId: r.id } })}
-                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)}
-                                                title={userHasOffered ? 'Maintain (1)' : 'Contact (1)'}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || usageLimitReached || state.contactsMadeThisWeek + 1 > getContactPoints(state.userTeam)}
+                                                title={userHasOffered ? `Maintain (${maintainCount}/5) (1)` : 'Contact (1)'}
                                             >
-                                                {userHasOffered ? 'Maintain' : 'Contact'}
+                                                {userHasOffered ? `Maintain${maintainCount >= 5 ? ' (Max)' : ''}` : 'Contact'}
                                             </button>
 
                                             {userHasOffered ? (
@@ -914,15 +1065,16 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                                   border: '2px solid #0f172a',
                                                   background: '#ffffff',
                                                   color: '#0f172a',
-                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || hasCoachVisited || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
                                                   fontWeight: 900,
                                                   fontSize: '10px',
-                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
-                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || hasCoachVisited || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || hasCoachVisited || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)) ? 0.55 : 1,
                                                   whiteSpace: 'nowrap',
                                                 }}
                                                 onClick={() => dispatch({ type: 'COACH_VISIT', payload: { recruitId: r.id } })}
-                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || hasCoachVisited || state.contactsMadeThisWeek + 5 > getContactPoints(state.userTeam)}
+                                                title={hasCoachVisited ? 'Coach visit completed' : 'Schedule Coach Visit (5)'}
                                             >
                                                 Visit
                                             </button>
@@ -934,17 +1086,18 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                                   border: '2px solid #0f172a',
                                                   background: '#ffffff',
                                                   color: '#0f172a',
-                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  boxShadow: (isCommittedAndLocked || hasUserDeclined || hasOfficialVisited || (r.officialVisitsUsed ?? 0) >= 5 || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
                                                   fontWeight: 900,
                                                   fontSize: '10px',
-                                                  cursor: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
-                                                  opacity: (isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  cursor: (isCommittedAndLocked || hasUserDeclined || hasOfficialVisited || (r.officialVisitsUsed ?? 0) >= 5 || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || hasUserDeclined || hasOfficialVisited || (r.officialVisitsUsed ?? 0) >= 5 || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)) ? 0.55 : 1,
                                                   whiteSpace: 'nowrap',
                                                 }}
                                                 onClick={() => setSchedulingVisitFor(r)}
-                                                disabled={isCommittedAndLocked || hasUserDeclined || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}
+                                                disabled={isCommittedAndLocked || hasUserDeclined || hasOfficialVisited || (r.officialVisitsUsed ?? 0) >= 5 || state.contactsMadeThisWeek + 8 > getContactPoints(state.userTeam)}
+                                                title={hasOfficialVisited ? 'Official visit scheduled/completed' : (r.officialVisitsUsed ?? 0) >= 5 ? 'Recruit used all 5 official visits' : `Schedule Official Visit (8) - ${r.officialVisitsUsed ?? 0}/5 visits used`}
                                             >
-                                                Official
+                                                Official{(r.officialVisitsUsed ?? 0) > 0 ? ` (${r.officialVisitsUsed}/5)` : ''}
                                             </button>
 
                                             <button
@@ -954,15 +1107,15 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                                   border: '2px solid #0f172a',
                                                   background: '#ffffff',
                                                   color: '#0f172a',
-                                                  boxShadow: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
+                                                  boxShadow: (isCommittedAndLocked || (r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'none' : '2px 2px 0 #0f172a',
                                                   fontWeight: 900,
                                                   fontSize: '10px',
-                                                  cursor: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
-                                                  opacity: (isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 0.55 : 1,
+                                                  cursor: (isCommittedAndLocked || (r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 'not-allowed' : 'pointer',
+                                                  opacity: (isCommittedAndLocked || (r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)) ? 0.55 : 1,
                                                   whiteSpace: 'nowrap',
                                                 }}
                                                 onClick={() => dispatch({ type: 'SCOUT_RECRUIT', payload: { recruitId: r.id, cost: 3 } })}
-                                                disabled={isCommittedAndLocked || (state.userTeam?.scoutingReports?.[r.id] || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
+                                                disabled={isCommittedAndLocked || (r.actionHistory?.[state.userTeam?.name || '']?.scoutLevel || 0) >= 3 || state.contactsMadeThisWeek + 3 > getContactPoints(state.userTeam)}
                                             >
                                                 Scout
                                             </button>
@@ -989,7 +1142,7 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                         </div>
                                     </div>
                                 </td>
-                                <td style={styles.td}>
+                                <td style={{...styles.td, display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch'}}>
                                     <button
                                         style={{
                                           padding: '4px 8px',
@@ -1007,6 +1160,49 @@ const MotivationDisplay = ({ motivations }: { motivations?: any }) => {
                                     >
                                         {r.isTargeted ? 'Targeted' : 'Target'}
                                     </button>
+                                    {(() => {
+                                        const userTeamName = state.userTeam?.name || '';
+                                        const recruitScoutLvl = r.actionHistory?.[userTeamName]?.scoutLevel || 0;
+                                        
+                                        // Calculate staff scout quality bonus (0-3 scale based on grades)
+                                        const gradeBonusMap: Record<string, number> = { 'A': 1, 'B': 0.5, 'C': 0.25, 'D': 0 };
+                                        const staffScoutBonus = Math.min(2, (state.userTeam?.staff?.scouts || []).reduce((sum, s) => sum + (gradeBonusMap[s.grade] || 0), 0));
+                                        
+                                        // Effective scout level: per-recruit level + staff quality bonus (capped at 3)
+                                        const scoutLvl = Math.min(3, recruitScoutLvl + Math.floor(staffScoutBonus));
+                                        
+                                        const isAutoMaintained = r.isAutoMaintained || false;
+                                        const canToggle = userHasOffered && !isCommittedAndLocked && !hasUserDeclined;
+                                        const riskColor = isAutoMaintained 
+                                            ? (scoutLvl >= 2 ? '#86efac' : scoutLvl === 1 ? '#fde047' : '#fca5a5')
+                                            : '#ffffff';
+                                        const riskBorder = scoutLvl >= 2 ? '#16a34a' : scoutLvl === 1 ? '#ca8a04' : '#dc2626';
+                                        
+                                        const scoutGradeLabel = staffScoutBonus >= 1.5 ? 'A+' : staffScoutBonus >= 1 ? 'A' : staffScoutBonus >= 0.5 ? 'B' : 'C';
+                                        
+                                        return (
+                                            <button
+                                                style={{
+                                                  padding: '4px 8px',
+                                                  borderRadius: '6px',
+                                                  border: `2px solid ${isAutoMaintained ? riskBorder : '#0f172a'}`,
+                                                  background: riskColor,
+                                                  color: '#0f172a',
+                                                  boxShadow: canToggle ? '2px 2px 0 #0f172a' : 'none',
+                                                  fontWeight: 900,
+                                                  fontSize: '9px',
+                                                  cursor: canToggle ? 'pointer' : 'not-allowed',
+                                                  opacity: canToggle ? 1 : 0.55,
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                onClick={() => dispatch({ type: 'TOGGLE_AUTO_MAINTAIN', payload: { recruitId: r.id } })}
+                                                disabled={!canToggle}
+                                                title={!userHasOffered ? 'Must have offer out' : `Staff Scout Grade: ${scoutGradeLabel} | Intel Lvl: ${recruitScoutLvl}/3 | ${scoutLvl >= 2 ? 'Safe (daily +2 to +6)' : scoutLvl === 1 ? 'Moderate (daily 0 to +3)' : 'Risky (daily -2 to +1)'}`}
+                                            >
+                                                {isAutoMaintained ? (scoutLvl >= 2 ? '✅' : scoutLvl === 1 ? '⚠️' : '❌') : '○'} Maint
+                                            </button>
+                                        );
+                                    })()}
                                 </td>
                             </tr>
                         )

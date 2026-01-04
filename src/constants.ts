@@ -51,7 +51,7 @@ export const SCHOOL_COLORS: { [key: string]: TeamColors } = {
   'California': { primary: '#003262', secondary: '#FDB515', text: '#FFFFFF' },
   'Clemson': { primary: '#F56600', secondary: '#522D80', text: '#FFFFFF' },
   'Colorado': { primary: '#CFB87C', secondary: '#000000', text: '#FFFFFF' },
-  'Duke': { primary: '#003087', secondary: '#FFFFFF', text: '#000000' },
+  'Duke': { primary: '#003087', secondary: '#FFFFFF', text: '#FFFFFF' },
   'Florida': { primary: '#0021A5', secondary: '#FA4616', text: '#FFFFFF' },
   'Florida State': { primary: '#782F40', secondary: '#CEB888', text: '#FFFFFF' },
   'Georgia': { primary: '#BA0C2F', secondary: '#000000', text: '#FFFFFF' },
@@ -111,7 +111,7 @@ export const SCHOOL_COLORS: { [key: string]: TeamColors } = {
   
   // Mid-Majors / Other notables
   'Boise State': { primary: '#0033A0', secondary: '#D64309', text: '#FFFFFF' },
-  'BYU': { primary: '#002E5D', secondary: '#FFFFFF', text: '#000000' },
+  'BYU': { primary: '#002E5D', secondary: '#FFFFFF', text: '#FFFFFF' },
   'Cincinnati': { primary: '#E00122', secondary: '#000000', text: '#FFFFFF' },
   'Colorado State': { primary: '#1E4D2B', secondary: '#C8C372', text: '#FFFFFF' },
   'Creighton': { primary: '#005995', secondary: '#FFFFFF', text: '#000000' },

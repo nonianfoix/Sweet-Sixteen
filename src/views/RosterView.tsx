@@ -41,6 +41,14 @@ const RosterView = ({ state, dispatch, colors }: { state: GameState, dispatch: R
     }, [state.userTeam]);
 
 
+    const renderTrendV2 = (player: Player) => {
+        if (player.startOfSeasonOverall === undefined) return <span style={{ color: 'gray' }}>-</span>;
+        const trend = player.overall - player.startOfSeasonOverall;
+        if (trend > 0) return <span style={{ color: '#1a7f37', fontWeight: 'bold' }}>▲ +{trend}</span>;
+        if (trend < 0) return <span style={{ color: '#c52b2b', fontWeight: 'bold' }}>▼ {trend}</span>;
+        return <span style={{ color: 'gray' }}>-</span>;
+    };
+
     const renderTrend = (player: Player) => {
         if (player.startOfSeasonOverall === undefined) return <span style={{ color: 'gray' }}>-</span>;
         const trend = player.overall - player.startOfSeasonOverall;
@@ -48,6 +56,32 @@ const RosterView = ({ state, dispatch, colors }: { state: GameState, dispatch: R
         if (trend < 0) return <span style={{ color: '#c52b2b' }}>? {trend}</span>;
         return <span style={{ color: 'gray' }}>�</span>;
     };
+
+    const renderYearPill = (year: Player['year']) => {
+        const yearColors: Record<Player['year'], { bg: string; text: string }> = {
+            'Fr': { bg: '#e0f2f1', text: '#00695c' },
+            'So': { bg: '#e3f2fd', text: '#1565c0' },
+            'Jr': { bg: '#fff3e0', text: '#e65100' },
+            'Sr': { bg: '#ffebee', text: '#c62828' },
+            'Intl': { bg: '#f3e5f5', text: '#7b1fa2' },
+            'Pro': { bg: '#fce4ec', text: '#c2185b' },
+        };
+        const colors = yearColors[year] || { bg: '#f5f5f5', text: '#333' };
+        return (
+            <span style={{
+                backgroundColor: colors.bg,
+                color: colors.text,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                border: `1px solid ${colors.text}`,
+            }}>
+                {year}
+            </span>
+        );
+    };
+
 
 
     if (!state.userTeam) return null;
@@ -283,7 +317,7 @@ const RosterView = ({ state, dispatch, colors }: { state: GameState, dispatch: R
                                                     max={40}
                                                     value={p.rotationMinutes ?? 0}
                                                     onChange={(e) => dispatch({ type: 'SET_PLAYER_MINUTES', payload: { playerId: p.id, minutes: parseInt(e.target.value || '0', 10) } })}
-                                                    style={{ width: '60px' }}
+                                                    style={{ ...styles.select, width: '55px', cursor: 'text', padding: '4px 6px' }}
                                                     disabled={!!p.minutesLocked}
                                                 />
                                                 <button
@@ -300,9 +334,9 @@ const RosterView = ({ state, dispatch, colors }: { state: GameState, dispatch: R
                                         <td style={nameCellStyle}>{index + 1}. {p.name}</td>
                                         <td style={styles.td}>{p.position}{p.secondaryPosition ? `/${p.secondaryPosition}` : ''}</td>
                                         <td style={styles.td}>{formatPlayerHeight(p.height)}</td>
-                                        <td style={yearCellStyle}>{displayYear}</td>
+                                        <td style={styles.td}>{renderYearPill(displayYear)}</td>
                                         <td style={styles.td}>{p.overall}</td>
-                                        <td style={styles.td}>{renderTrend(p)}</td>
+                                        <td style={styles.td}>{renderTrendV2(p)}</td>
                                         <td style={styles.td}>{formatPotentialValue(p.potential)}</td>
                                         <td style={styles.td}>
                                             <div style={styles.inlineRowAction}>
@@ -318,7 +352,7 @@ const RosterView = ({ state, dispatch, colors }: { state: GameState, dispatch: R
                                                     max={40}
                                                     value={p.rotationMinutes ?? 0}
                                                     onChange={(e) => dispatch({ type: 'SET_PLAYER_MINUTES', payload: { playerId: p.id, minutes: parseInt(e.target.value || '0', 10) } })}
-                                                    style={{ width: '60px' }}
+                                                    style={{ ...styles.select, width: '55px', cursor: 'text', padding: '4px 6px' }}
                                                     disabled={!!p.minutesLocked}
                                                 />
                                                 <button

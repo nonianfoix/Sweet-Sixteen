@@ -231,7 +231,7 @@ const ConferenceHubModal = ({
                     {activeTab === 'overview' && (
                         <div style={styles.conferenceHubGrid}>
                     <section style={styles.conferenceHubPanel}>
-                        <div style={styles.conferenceHubPanelTitle}>Conference Snapshot</div>
+                        <div style={{ ...styles.conferenceHubPanelTitle, background: '#1e40af' }}>Conference Snapshot</div>
                         {conferenceSummary ? (
                             <div style={styles.conferenceHubCardGrid}>
                                 <div style={styles.conferenceHubCard}>
@@ -288,7 +288,7 @@ const ConferenceHubModal = ({
                     </section>
 
                     <section style={styles.conferenceHubPanel}>
-                        <div style={styles.conferenceHubPanelTitle}>Top Players</div>
+                        <div style={{ ...styles.conferenceHubPanelTitle, background: '#059669' }}>Top Players</div>
                         <div style={styles.conferenceHubList}>
                             {topConferencePlayers.map(({ player, teamName }) => (
                                 <div key={`${player.id}-${teamName}`} style={styles.conferenceHubListItem}>
@@ -307,7 +307,7 @@ const ConferenceHubModal = ({
                     </section>
 
                     <section style={styles.conferenceHubPanel}>
-                        <div style={styles.conferenceHubPanelTitle}>Top Recruits</div>
+                        <div style={{ ...styles.conferenceHubPanelTitle, background: '#7c3aed' }}>Top Recruits</div>
                         <div style={styles.conferenceHubPanelSubTitle}>Committed to conference</div>
                         <div style={styles.conferenceHubList}>
                             {conferenceCommits.length ? (
@@ -318,7 +318,7 @@ const ConferenceHubModal = ({
                                                 {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
                                             </div>
                                             <div style={{ whiteSpace: 'nowrap' }}>
-                                                <span style={styles.conferenceHubPill}>{'?'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
                                                 {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
                                             </div>
                                         </div>
@@ -339,7 +339,7 @@ const ConferenceHubModal = ({
                                             {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
                                         </div>
                                         <div style={{ whiteSpace: 'nowrap' }}>
-                                            <span style={styles.conferenceHubPill}>{'?'.repeat(Math.max(0, r.stars || 0))}</span>
+                                            <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
                                             {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
                                         </div>
                                     </div>
@@ -355,7 +355,7 @@ const ConferenceHubModal = ({
 
                     {activeTab === 'standings' && (
                         <section style={styles.conferenceHubPanel}>
-                            <div style={styles.conferenceHubPanelTitle}>Standings</div>
+                            <div style={{ ...styles.conferenceHubPanelTitle, background: '#0369a1' }}>Standings</div>
                             <div style={styles.conferenceStandingsHeader}>
                                 <div style={{ flex: 1 }}>Team</div>
                                 <div style={{ width: '70px', textAlign: 'right' }}>W</div>
@@ -398,7 +398,7 @@ const ConferenceHubModal = ({
                     {activeTab === 'leaders' && (
                         <div style={styles.conferenceHubGridAuto}>
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Scoring Leaders</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#ea580c' }}>Scoring Leaders</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>PPG</div>
                                 <div style={styles.conferenceHubList}>
                                     {playerLeaders.scored.map(({ player, teamName }, idx) => (
@@ -422,7 +422,7 @@ const ConferenceHubModal = ({
                             </section>
 
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Assist Leaders</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#0d9488' }}>Assist Leaders</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>APG</div>
                                 <div style={styles.conferenceHubList}>
                                     {playerLeaders.ast.map(({ player, teamName }, idx) => (
@@ -446,7 +446,7 @@ const ConferenceHubModal = ({
                             </section>
 
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Rebound Leaders</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#4f46e5' }}>Rebound Leaders</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>RPG</div>
                                 <div style={styles.conferenceHubList}>
                                     {playerLeaders.reb.map(({ player, teamName }, idx) => (
@@ -470,7 +470,7 @@ const ConferenceHubModal = ({
                             </section>
 
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Top Overall</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#16a34a' }}>Top Overall</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>OVR</div>
                                 <div style={styles.conferenceHubList}>
                                     {playerLeaders.ovr.map(({ player, teamName }, idx) => (
@@ -494,7 +494,7 @@ const ConferenceHubModal = ({
                     {activeTab === 'recruits' && (
                         <div style={styles.conferenceHubGridAuto}>
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Conference Commits</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#dc2626' }}>Conference Commits</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>Committed to conference</div>
                                 <div style={styles.conferenceHubList}>
                                     {conferenceCommits.length ? (
@@ -505,7 +505,7 @@ const ConferenceHubModal = ({
                                                         {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
                                                     </div>
                                                     <div style={styles.conferenceHubListItemValue}>
-                                                        <span style={styles.conferenceHubPill}>{'?'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                        <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
                                                         {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
                                                     </div>
                                                 </div>
@@ -519,7 +519,7 @@ const ConferenceHubModal = ({
                             </section>
 
                             <section style={styles.conferenceHubPanel}>
-                                <div style={styles.conferenceHubPanelTitle}>Top Available</div>
+                                <div style={{ ...styles.conferenceHubPanelTitle, background: '#0284c7' }}>Top Available</div>
                                 <div style={styles.conferenceHubPanelSubTitle}>Uncommitted</div>
                                 <div style={styles.conferenceHubList}>
                                     {topAvailableRecruits.map(r => (
@@ -529,7 +529,7 @@ const ConferenceHubModal = ({
                                                     {r.name} <span style={{ opacity: 0.75 }}>{r.position}</span>
                                                 </div>
                                                 <div style={styles.conferenceHubListItemValue}>
-                                                    <span style={styles.conferenceHubPill}>{'?'.repeat(Math.max(0, r.stars || 0))}</span>
+                                                    <span style={styles.conferenceHubPill}>{'★'.repeat(Math.max(0, r.stars || 0))}</span>
                                                     {typeof r.nationalRank === 'number' ? <span style={styles.conferenceHubPill}>#{r.nationalRank}</span> : null}
                                                 </div>
                                             </div>

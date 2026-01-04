@@ -20,13 +20,11 @@ body {
 
 body {
   padding: 0;
-  zoom: 0.75; /* User preference: 75% scale */
+  overflow-x: hidden;
 }
 
 #root {
-  width: 100%;
-  min-height: 100vh;
-  margin: 0 auto;
+  zoom: 0.75;
 }
 
 button {

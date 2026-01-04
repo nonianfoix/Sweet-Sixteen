@@ -2,6 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { Team, SponsorName, TeamColors, SponsorData, SponsorOffer } from '../types';
 import { createSponsorFromName, calculateSponsorRevenueSnapshot } from '../services/gameService';
 import { SPONSOR_SLOGANS } from '../constants';
+import { teamColor, bestTextColor, clamp } from '../services/utils';
+
+// Brand Logos
+import NikeLogo from '../BRAND LOGOS/Logo_NIKE.svg';
+import AdidasLogo from '../BRAND LOGOS/Adidas_2022_logo.svg';
+import JordanLogo from '../BRAND LOGOS/Jumpman_logo.svg';
+import UnderArmourLogo from '../BRAND LOGOS/Under_armour_logo.svg';
+import PumaLogo from '../BRAND LOGOS/Puma-logo-(text).svg';
+import ReebokLogo from '../BRAND LOGOS/Reebok_wordmark_(1977–1993).svg';
+import NewBalanceLogo from '../BRAND LOGOS/20160801155104!New_Balance_logo.svg';
 
 interface SponsorModalProps {
     team: Team;
@@ -16,9 +26,211 @@ const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 };
 
-const SponsorModal = ({ team, allTeams, sponsors, colors, onClose, onAcceptOffer }: SponsorModalProps) => {
-    const [activeTab, setActiveTab] = useState<'landscape' | 'schools'>('landscape');
+// --- SPONSORSHIP 2.0 CONFIGURATION ---
+type BrandPerk = { name: string; description: string; effect: string; icon: string };
+type BrandConfig = { color: string; accent: string; perk: BrandPerk; description: string; logoStyle: React.CSSProperties; logoSrc: string };
 
+const SPONSOR_CONFIG: Record<SponsorName, BrandConfig> = {
+    'Nike': {
+        color: '#111111',
+        accent: '#fbbf24', // Gold
+        perk: { name: 'Global Icon', description: 'Massive recruiting reach bonus.', effect: '+15% Interest (Non-Pipeline)', icon: '🌍' },
+        description: 'The undisputed king of sportswear. Nike demands success but offers unparalleled visibility.',
+        logoStyle: { fontFamily: 'Impact, sans-serif', letterSpacing: '-1px', fontStyle: 'italic' },
+        logoSrc: NikeLogo
+    },
+    'Jordan': {
+        color: '#ef4444',
+        accent: '#000000',
+        perk: { name: 'Jumpman Factor', description: 'Elite prestige magnet.', effect: '+20% 5-Star Interest', icon: '🐐' },
+        description: 'Reserved for the elite. The Jumpman logo is a status symbol that attracts top-tier talent.',
+        logoStyle: { fontFamily: 'Impact, sans-serif', letterSpacing: '2px' },
+        logoSrc: JordanLogo
+    },
+    'Adidas': {
+        color: '#3b82f6', // Blue
+        accent: '#ffffff',
+        perk: { name: '3SSB Circuit', description: 'Deep grassroots connections.', effect: '+1 Pipeline Tier Speed', icon: '⚡' },
+        description: 'A global powerhouse with deep roots in grassroots basketball and international markets.',
+        logoStyle: { fontFamily: 'Arial Black, sans-serif', letterSpacing: '-1px', textTransform: 'lowercase' },
+        logoSrc: AdidasLogo
+    },
+    'Under Armour': {
+        color: '#000000',
+        accent: '#ffffff',
+        perk: { name: 'The Grind', description: 'Focus on hard work.', effect: '+5% Player Dev Rate', icon: '🛡️' },
+        description: 'Built for the underdog who outworks the competition. No frills, just performance.',
+        logoStyle: { fontFamily: 'Impact, sans-serif', letterSpacing: '1px' },
+        logoSrc: UnderArmourLogo
+    },
+    'Puma': {
+        color: '#f97316', // Orange
+        accent: '#111111',
+        perk: { name: 'Disruptor', description: 'Flashy and aggressive.', effect: '+10% NIL Budget Pot', icon: '🐆' },
+        description: 'The new cool. Puma targets the bold and the creative, bringing fashion to the court.',
+        logoStyle: { fontFamily: 'Courier New, monospace', fontWeight: 900 },
+        logoSrc: PumaLogo
+    },
+    'New Balance': {
+        color: '#dc2626', // Red
+        accent: '#ffffff',
+        perk: { name: 'Intelligent Choice', description: 'Smart and steady.', effect: '+10% Academic Interest', icon: '👟' },
+        description: 'No nonsense excellence. Appeals to players who let their game do the talking.',
+        logoStyle: { fontFamily: 'Arial, sans-serif', fontWeight: 900, fontStyle: 'italic' },
+        logoSrc: NewBalanceLogo
+    },
+    'Reebok': {
+        color: '#6366f1', // Indigo
+        accent: '#ffffff',
+        perk: { name: 'Heritage', description: 'Retro cool factor.', effect: '+5 Fan Loyalty', icon: '🇬🇧' },
+        description: 'A classic brand making a comeback. Leveraging nostalgia and street cred.',
+        logoStyle: { fontFamily: 'Arial Black, sans-serif', letterSpacing: '1px' },
+        logoSrc: ReebokLogo
+    }
+};
+
+// --- NEOBRUTALIST STYLES ---
+const styles = {
+    modalOverlay: {
+        position: 'fixed' as const,
+        inset: 0,
+        zIndex: 2000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '12px',
+        backgroundColor: 'rgba(15,23,42,0.45)',
+        backdropFilter: 'blur(4px)',
+    },
+    modalContent: {
+        width: '95vw',
+        maxWidth: '1400px',
+        height: '90vh',
+        background: '#f8fafc',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        boxShadow: '12px 12px 0 #0f172a',
+        border: '4px solid #0f172a',
+        display: 'flex',
+        flexDirection: 'column' as const,
+    },
+    closeButton: {
+        position: 'absolute' as const,
+        top: '16px',
+        right: '16px',
+        width: '40px',
+        height: '40px',
+        borderRadius: '8px',
+        border: '3px solid #0f172a',
+        background: '#fde047',
+        boxShadow: '4px 4px 0 #0f172a',
+        cursor: 'pointer',
+        color: '#0f172a',
+        fontWeight: 900,
+        fontSize: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+        transition: 'transform 0.1s',
+    },
+    // Layout
+    mainGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'minmax(350px, 1fr) 2fr',
+        height: '100%',
+        overflow: 'hidden',
+    },
+    leftPanel: {
+        background: '#f1f5f9',
+        borderRight: '3px solid #0f172a',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        overflowY: 'auto' as const,
+        padding: '24px',
+    },
+    rightPanel: {
+        background: '#ffffff',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        overflowY: 'auto' as const,
+        position: 'relative' as const,
+    },
+    // Typography
+    headingLg: {
+        fontSize: '32px',
+        fontWeight: 900,
+        color: '#0f172a',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '-0.03em',
+        lineHeight: 0.9,
+    },
+    headingMd: {
+        fontSize: '18px',
+        fontWeight: 800,
+        color: '#0f172a',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em',
+    },
+    label: {
+        fontSize: '11px',
+        fontWeight: 800,
+        color: '#64748b',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.1em',
+        marginBottom: '4px',
+    },
+    // Components
+    cardSelectable: (active: boolean, brandColor: string) => ({
+        background: active ? '#ffffff' : '#e2e8f0',
+        borderRadius: '12px',
+        border: active ? `3px solid ${brandColor}` : '3px solid transparent',
+        padding: '16px',
+        cursor: 'pointer',
+        marginBottom: '12px',
+        transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+        transform: active ? 'translateX(8px)' : 'none',
+        boxShadow: active ? `4px 4px 0 #0f172a` : 'none',
+        opacity: active ? 1 : 0.8,
+    }),
+    pill: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 8px',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 800,
+        border: '2px solid #0f172a',
+        boxShadow: '2px 2px 0 rgba(15,23,42,0.1)',
+        textTransform: 'uppercase' as const,
+    },
+    barChartContainer: {
+        height: '24px',
+        width: '100%',
+        background: '#e2e8f0',
+        borderRadius: '6px',
+        border: '2px solid #0f172a',
+        overflow: 'hidden',
+        display: 'flex',
+    },
+    barSegment: (color: string, percent: number) => ({
+        height: '100%',
+        width: `${percent}%`,
+        background: color,
+        borderRight: '1px solid rgba(0,0,0,0.1)',
+    }),
+};
+
+const SponsorModal = ({ team, allTeams, sponsors, colors, onClose, onAcceptOffer }: SponsorModalProps) => {
+    // Determine the initially selected sponsor: Pending Offer -> Current Sponsor -> Nike
+    const initialSelection = useMemo(() => {
+        if (team.sponsorOffers.length > 0) return team.sponsorOffers[0].sponsorName;
+        return team.sponsor?.name || 'Nike';
+    }, [team]);
+
+    const [selectedBrandName, setSelectedBrandName] = useState<SponsorName>(initialSelection as SponsorName);
+
+    // --- Derived Data ---
     const sponsorMetrics = useMemo(() => {
         const metrics = new Map<SponsorName, { totalRevenue: number }>();
         let totalLeagueSponsorRevenue = 0;
@@ -33,250 +245,377 @@ const SponsorModal = ({ team, allTeams, sponsors, colors, onClose, onAcceptOffer
         });
         return { metrics, totalLeagueSponsorRevenue };
     }, [allTeams]);
-    
-    const renderSponsorLandscape = () => {
-        const allSponsors = (Object.keys(sponsors) as SponsorName[]).sort((a, b) => {
-            const shareA = sponsors[a]?.marketShare || 0;
-            const shareB = sponsors[b]?.marketShare || 0;
-            return shareB - shareA;
-        });
 
-        return (
-            <div>
-                <h4 style={{ ...styles.title, fontSize: '1.2rem', color: colors.primary, textShadow: 'none', marginBottom: '15px' }}>Sponsor Landscape</h4>
-                <p style={{ fontSize: '0.7rem', marginBottom: '15px' }}>This shows each brand's tier, market share, and an estimated revenue breakdown if they were your team's sponsor.</p>
-                <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-                    <div style={styles.tableContainer}>
-                    <table style={{...styles.table, fontSize: '0.6rem', minWidth: '1050px'}}>
-                        <thead>
-                            <tr>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Brand (Tier)</th>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Total Revenue</th>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Revenue Share</th>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Schools</th>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Avg Prestige</th>
-                                <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Your Est. Deal</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {allSponsors.map(sponsorName => {
-                                const sponsorData = sponsors[sponsorName];
-                                if (!sponsorData) return null;
+    // Data for the SELECTED brand
+    const selectedBrandData = useMemo(() => {
+        const sponsorData = sponsors[selectedBrandName];
+        if (!sponsorData) return null;
 
-                                const tempSponsor = createSponsorFromName(sponsorName, sponsors);
-                                const tempTeam = { ...team, sponsor: tempSponsor };
-                                const estimatedRevenue = calculateSponsorRevenueSnapshot(tempTeam);
-                                const totalRevenue = sponsorMetrics.metrics.get(sponsorName)?.totalRevenue || 0;
-                                const revenueShare = sponsorMetrics.totalLeagueSponsorRevenue > 0 ? (totalRevenue / sponsorMetrics.totalLeagueSponsorRevenue) * 100 : 0;
+        const config = SPONSOR_CONFIG[selectedBrandName];
+        const tempSponsor = createSponsorFromName(selectedBrandName, sponsors);
+        const revenueSnapshot = calculateSponsorRevenueSnapshot({ ...team, sponsor: tempSponsor });
+        
+        // Calculate "Synergy" (Fit Score)
+        const teamPrestige = team.prestige;
+        const tierTargets: Record<string, number> = { Elite: 88, High: 82, Mid: 72, Low: 60 };
+        const targetPrestige = tierTargets[sponsorData.tier] || 60;
+        const prestigeFit = clamp(100 - Math.abs(teamPrestige - targetPrestige) * 1.5, 20, 100);
+        // Market fit (randomized variance for now, represents demographics)
+        const marketFit = clamp(prestigeFit + (team.marketSize || 3) * 5, 0, 100);
+        const synergyScore = Math.round((prestigeFit + marketFit) / 2);
 
-                                // Compute average prestige for schools currently signed to this brand
-                                const brandTeams = allTeams.filter(t => t.sponsor?.name === sponsorName);
-                                const avgPrestige = brandTeams.length > 0 ? (brandTeams.reduce((sum, t) => sum + (t.prestige || 0), 0) / brandTeams.length) : 0;
-                                return (
-                                    <tr key={sponsorName}>
-                                        <td style={styles.td}>{sponsorName} ({sponsorData.tier})</td>
-                                        <td style={styles.td}>{formatCurrency(totalRevenue)}</td>
-                                        <td style={styles.td}>{revenueShare.toFixed(1)}%</td>
-                                        <td style={styles.td}>{sponsorData.sponsoredTeamCount} {sponsorName === 'Jordan' ? '/ 20' : ''}</td>
-                                        <td style={styles.td}>{avgPrestige.toFixed(1)}</td>
-                                        <td style={styles.td}>
-                                            {formatCurrency(estimatedRevenue.total)}<br/>
-                                            <span style={{fontSize: '0.5rem'}}>J:{formatCurrency(estimatedRevenue.jersey)}/S:{formatCurrency(estimatedRevenue.shoe)}/M:{formatCurrency(estimatedRevenue.merch)}</span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+        // Schools List
+        const schools = allTeams.filter(t => t.sponsor?.name === selectedBrandName).map(t => t.name).sort();
 
-    const renderSchoolsByBrand = () => {
-        const grouped = new Map<SponsorName, string[]>();
-        allTeams.forEach(t => {
-            const name = t.sponsor?.name as SponsorName;
-            if (!name) return;
-            if (!grouped.has(name)) grouped.set(name, []);
-            grouped.get(name)!.push(t.name);
-        });
-        const rows = (Object.keys(sponsors) as SponsorName[]).sort((a, b) => (grouped.get(b)?.length || 0) - (grouped.get(a)?.length || 0));
-        return (
-            <div>
-                <h4 style={{ ...styles.title, fontSize: '1.2rem', color: colors.primary, textShadow: 'none', marginBottom: '15px' }}>Schools by Brand</h4>
-                <p style={{ fontSize: '0.7rem', marginBottom: '15px' }}>A breakdown of which schools are currently signed to each sponsor.</p>
-                <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-                    <div style={styles.tableContainer}>
-                        <table style={{...styles.table, fontSize: '0.6rem', minWidth: '900px'}}>
-                            <thead>
-                                <tr>
-                                    <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Brand</th>
-                                    <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Count</th>
-                                    <th style={{...styles.th, backgroundColor: colors.primary, color: colors.text}}>Schools</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map(name => (
-                                    <tr key={name}>
-                                        <td style={styles.td}>{name}</td>
-                                        <td style={styles.td}>{grouped.get(name)?.length || 0}</td>
-                                        <td style={{...styles.td, whiteSpace: 'normal'}}>
-                                            {(grouped.get(name) || []).sort().join(', ')}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+        // Check if there is a pending offer for this brand
+        const pendingOffer = team.sponsorOffers.find(o => o.sponsorName === selectedBrandName);
+
+        // Current status
+        const isCurrent = team.sponsor?.name === selectedBrandName;
+
+        return {
+            ...sponsorData,
+            config,
+            revenue: revenueSnapshot,
+            synergy: synergyScore,
+            schools,
+            pendingOffer,
+            isCurrent,
+            metrics: sponsorMetrics.metrics.get(selectedBrandName) || { totalRevenue: 0 }
+        };
+    }, [selectedBrandName, team, sponsors, allTeams, sponsorMetrics]);
+
+    if (!selectedBrandData) return null;
+
+    const { config, revenue, pendingOffer, isCurrent } = selectedBrandData;
 
     return (
         <div style={styles.modalOverlay} onClick={onClose}>
-            <div style={styles.sponsorModalContent} onClick={e => e.stopPropagation()}>
-                <button onClick={onClose} style={styles.modalCloseButton}>X</button>
-                <h3 style={{ ...styles.title, fontSize: '1.3rem', color: colors.primary, marginBottom: '15px' }}>
-                    {team.sponsorOffers.length > 0 ? 'Sponsor Offers' : 'Sponsorship'}
-                </h3>
-                {team.pipelines && team.pipelines.length > 0 && (
-                    <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#e0e0e0', border: '1px solid #999', borderRadius: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Confidence</span>
-                            <span style={{ fontSize: '0.7rem' }}>{team.pipelineStates?.join(', ') || 'None'}</span>
+            <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+                <button style={styles.closeButton} onClick={onClose}>×</button>
+                
+                <div style={styles.mainGrid}>
+                    {/* --- LEFT PANEL: MARKET LANDSCAPE (SELECTOR) --- */}
+                    <div style={styles.leftPanel}>
+                        <div style={{ marginBottom: '24px' }}>
+                            <h2 style={styles.headingLg}>Sponsorship<br/>Hub</h2>
+                            <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
+                                Review the market, compare perks, and manage your program's brand identity.
+                            </div>
                         </div>
-                        <div style={{ width: '100%', height: '10px', backgroundColor: '#ccc', marginTop: '5px', borderRadius: '5px', overflow: 'hidden' }}>
-                            <div style={{ 
-                                width: `${Math.min(100, (team.pipelines?.length || 0) * 20)}%`, 
-                                height: '100%', 
-                                backgroundColor: team.pipelines?.some(p => p.tier === 'Gold') ? colors.secondary : colors.primary 
-                            }} />
-                        </div>
-                        <p style={{ fontSize: '0.6rem', marginTop: '4px', fontStyle: 'italic' }}>
-                            Effective pipelines increase sponsor appeal in those regions.
-                        </p>
-                    </div>
-                )}
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                    <button style={{ ...styles.smallButton, backgroundColor: activeTab === 'landscape' ? '#FFD54F' : '#C0C0C0' }} onClick={() => setActiveTab('landscape')}>Landscape</button>
-                    <button style={{ ...styles.smallButton, backgroundColor: activeTab === 'schools' ? '#FFD54F' : '#C0C0C0' }} onClick={() => setActiveTab('schools')}>Schools by Brand</button>
-                </div>
-                {team.sponsorOffers.length > 0 ? (
-                    <div>
-                        {team.sponsorOffers.map((offer, index) => {
-                            const tier = createSponsorFromName(offer.sponsorName, sponsors).tier;
-                            return (
-                                <div key={index} style={{ ...styles.sponsorCard, borderColor: colors.secondary, backgroundColor: '#f9f9f9', color: '#333' }}>
-                                    <h4 style={{ margin: '0 0 10px 0' }}>{offer.sponsorName} ({tier} Tier) - <em style={{fontSize: '0.7em'}}>{SPONSOR_SLOGANS[offer.sponsorName]}</em></h4>
-                                    <p style={{ fontSize: '0.8rem', margin: '0 0 5px 0' }}>Contract Length: {offer.years} years</p>
-                                    <p style={{ fontSize: '0.8rem', margin: '0 0 10px 0' }}>Yearly Value: {formatCurrency(offer.annualPayout)}</p>
-                                    <button
-                                        style={styles.smallButton}
-                                        onClick={() => onAcceptOffer(offer)}
-                                    >
-                                        Accept
-                                    </button>
+
+                        {/* Current Sponsor Status Card */}
+                        <div style={{ 
+                            ...styles.sectionCard, 
+                            borderLeft: `5px solid ${colors.primary}`, 
+                            marginBottom: '32px',
+                            background: '#ffffff',
+                            padding: '16px',
+                            borderRadius: '12px',
+                            border: '3px solid #cbd5e1',
+                            boxShadow: '4px 4px 0 #cbd5e1'
+                        }}>
+                            <div style={styles.label}>Current Partner</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a' }}>{team.sponsor?.name || 'None'}</div>
+                                <div style={{ fontSize: '14px', fontWeight: 800, color: colors.primary }}>
+                                    {team.name === 'Oregon' && team.sponsor?.name === 'Nike' 
+                                        ? 'Lifetime Contract' 
+                                        : `${team.sponsorContractYearsRemaining} Yrs Left`
+                                    }
                                 </div>
-                            )
-                        })}
+                            </div>
+                        </div>
+
+                        <div style={styles.label}>Market Landscape</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {(Object.keys(sponsors) as SponsorName[]).sort((a,b) => (sponsors[b]?.marketShare||0) - (sponsors[a]?.marketShare||0)).map(name => {
+                                const data = sponsors[name];
+                                if(!data) return null;
+                                const isActive = selectedBrandName === name;
+                                const brandConf = SPONSOR_CONFIG[name];
+                                const hasOffer = team.sponsorOffers.some(o => o.sponsorName === name);
+
+                                return (
+                                    <div 
+                                        key={name}
+                                        onClick={() => setSelectedBrandName(name)}
+                                        style={styles.cardSelectable(isActive, brandConf.color)}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div style={{ fontWeight: 900, fontSize: '15px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {name}
+                                                {hasOffer && (
+                                                    <span style={{ fontSize: '10px', background: '#22c55e', color: '#fff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #14532d' }}>OFFER</span>
+                                                )}
+                                                {team.sponsor?.name === name && (
+                                                    <span style={{ fontSize: '10px', background: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #b45309' }}>CURRENT</span>
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>
+                                                {(data.marketShare * 100).toFixed(1)}% Share
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
-                ) : (
-                    activeTab === 'landscape' ? renderSponsorLandscape() : renderSchoolsByBrand()
-                )}
+
+                    {/* --- RIGHT PANEL: BRAND DEEP DIVE --- */}
+                    <div style={styles.rightPanel}>
+                        {/* Dynamic Hero Header */}
+                        <div style={{ 
+                            background: config.color, 
+                            color: config.accent,
+                            padding: '40px',
+                            minHeight: '220px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'flex-end',
+                            position: 'relative',
+                            borderBottom: '4px solid #0f172a'
+                        }}>
+                            <img 
+                                src={config.logoSrc}
+                                style={{ 
+                                    position: 'absolute', 
+                                    top: '20px', 
+                                    right: '20px', 
+                                    height: '240px',
+                                    opacity: 0.1, 
+                                    filter: 'brightness(0) invert(1)',
+                                    pointerEvents: 'none',
+                                    userSelect: 'none' 
+                                }}
+                                alt=""
+                            />
+                            
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '16px' }}>
+                                <div style={{ fontSize: '64px', lineHeight: 0.8, ...config.logoStyle }}>
+                                    {selectedBrandName}
+                                </div>
+                                <div style={{ 
+                                    padding: '6px 12px', 
+                                    background: '#ffffff', 
+                                    color: config.color, 
+                                    fontWeight: 900, 
+                                    borderRadius: '6px', 
+                                    fontSize: '14px',
+                                    border: '2px solid #000',
+                                    boxShadow: '4px 4px 0 rgba(0,0,0,0.3)'
+                                }}>
+                                    {selectedBrandData.tier} Tier
+                                </div>
+                            </div>
+                            
+                            <div style={{ fontSize: '18px', fontStyle: 'italic', fontWeight: 600, opacity: 0.9, maxWidth: '600px', lineHeight: 1.4 }}>
+                                "{SPONSOR_SLOGANS[selectedBrandName]}"
+                            </div>
+                        </div>
+
+                        {/* Dashboard Content */}
+                        <div style={{ padding: '40px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '40px' }}>
+                            
+                            {/* Column 1: Financials & Synergy */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                                
+                                {/* Estimated Value Section */}
+                                <div style={{ ...styles.sectionCard, padding: '24px', border: '3px solid #0f172a', boxShadow: '8px 8px 0 #0f172a' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
+                                        <div>
+                                            <div style={styles.label}>Estimated Annual Value</div>
+                                            <div style={{ fontSize: '42px', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>
+                                                {formatCurrency(revenue.total)}
+                                                {pendingOffer && (
+                                                    <span style={{ fontSize: '14px', color: '#22c55e', marginLeft: '10px', verticalAlign: 'middle' }}>
+                                                        (Offer Pending)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={styles.label}>Brand Synergy</div>
+                                            <div style={{ fontSize: '24px', fontWeight: 900, color: selectedBrandData.synergy > 75 ? '#16a34a' : '#f59e0b' }}>
+                                                {selectedBrandData.synergy}%
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Synergy Meter */}
+                                    <div style={{ height: '12px', background: '#e2e8f0', borderRadius: '6px', border: '2px solid #0f172a', overflow: 'hidden', marginBottom: '24px' }}>
+                                        <div style={{ width: `${selectedBrandData.synergy}%`, height: '100%', background: config.color }}></div>
+                                    </div>
+
+                                    {/* Revenue Breakdown */}
+                                    <div style={styles.label}>Revenue Structure</div>
+                                    <div style={styles.barChartContainer}>
+                                        <div style={styles.barSegment(config.color, 60)} title="Base Pay" />
+                                        <div style={styles.barSegment(config.accent === '#ffffff' ? '#94a3b8' : config.accent, 25)} title="Royalties" />
+                                        <div style={styles.barSegment('#22c55e', 15)} title="Bonuses" />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>
+                                        <span>Base Pay ({formatCurrency(revenue.jersey)})</span>
+                                        <span>Merch Royalties</span>
+                                        <span>Performance Bonus</span>
+                                    </div>
+                                </div>
+
+                                {/* Active Schools */}
+                                <div>
+                                    <div style={{ ...styles.headingMd, marginBottom: '16px' }}>Network ({selectedBrandData.schools.length})</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                        {selectedBrandData.schools.map(school => (
+                                            <span key={school} style={{ 
+                                                ...styles.pill, 
+                                                background: school === team.name ? '#fef3c7' : '#ffffff',
+                                                borderColor: school === team.name ? '#f59e0b' : '#cbd5e1'
+                                            }}>
+                                                {school}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Column 2: Perks & Actions */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                
+                                {/* Brand Perk Card */}
+                                <div style={{ 
+                                    background: config.color, 
+                                    border: `3px solid ${config.color}`, 
+                                    borderRadius: '12px', 
+                                    padding: '24px',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}>
+                                    {/* Watermark Logo */}
+                                    <img 
+                                        src={config.logoSrc}
+                                        style={{
+                                            position: 'absolute',
+                                            top: '-10%',
+                                            right: '-10%',
+                                            height: '140%',
+                                            opacity: 0.1,
+                                            filter: 'brightness(0) invert(1)',
+                                            pointerEvents: 'none'
+                                        }}
+                                        alt=""
+                                    />
+                                    
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px', position: 'relative', zIndex: 1 }}>
+                                        {/* Main Icon Logo */}
+                                        <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <img 
+                                                src={config.logoSrc} 
+                                                style={{ width: '100%', maxHeight: '100%', objectFit: 'contain', filter: 'brightness(0) invert(1)' }} 
+                                                alt={config.perk.name}
+                                            />
+                                        </div>
+                                        <div>
+                                            <div style={{ ...styles.label, color: config.accent, opacity: 0.8 }}>Brand Perk</div>
+                                            <div style={{ fontSize: '20px', fontWeight: 900, color: config.accent }}>{config.perk.name}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '14px', color: config.accent, opacity: 0.9, fontStyle: 'italic', marginBottom: '16px', lineHeight: 1.5, position: 'relative', zIndex: 1 }}>
+                                        "{config.perk.description}"
+                                    </div>
+                                    <div style={{ 
+                                        background: '#22c55e', 
+                                        color: '#fff', 
+                                        display: 'inline-block', 
+                                        padding: '6px 12px', 
+                                        borderRadius: '6px', 
+                                        fontWeight: 800, 
+                                        fontSize: '13px',
+                                        border: '2px solid #14532d',
+                                        boxShadow: '2px 2px 0 rgba(0,0,0,0.2)',
+                                        position: 'relative',
+                                        zIndex: 1
+                                    }}>
+                                        {config.perk.effect}
+                                    </div>
+                                </div>
+
+                                {/* PENDING OFFER ACTION */}
+                                {pendingOffer ? (
+                                    <div style={{ 
+                                        background: '#fff', 
+                                        border: '4px solid #22c55e', 
+                                        borderRadius: '12px', 
+                                        padding: '24px', 
+                                        boxShadow: '8px 8px 0 #15803d',
+                                        textAlign: 'center'
+                                    }}>
+                                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#16a34a', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                            Contract Offer Available
+                                        </div>
+                                        <div style={{ fontSize: '32px', fontWeight: 900, color: '#0f172a', marginBottom: '8px' }}>
+                                            {formatCurrency(pendingOffer.annualPayout)}<span style={{fontSize:'16px', color:'#64748b'}}>/yr</span>
+                                        </div>
+                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#64748b', marginBottom: '20px' }}>
+                                            {pendingOffer.years} Year Agreement
+                                        </div>
+                                        <button 
+                                            onClick={() => onAcceptOffer(pendingOffer)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '16px',
+                                                background: '#22c55e',
+                                                border: '3px solid #0f172a',
+                                                borderRadius: '8px',
+                                                fontSize: '18px',
+                                                fontWeight: 900,
+                                                color: '#fff',
+                                                textTransform: 'uppercase',
+                                                cursor: 'pointer',
+                                                boxShadow: '4px 4px 0 #0f172a'
+                                            }}
+                                        >
+                                            Sign Deal
+                                        </button>
+                                    </div>
+                                ) : isCurrent ? (
+                                    <div style={{ 
+                                        background: '#f1f5f9', 
+                                        border: '2px dashed #94a3b8', 
+                                        borderRadius: '12px', 
+                                        padding: '24px', 
+                                        textAlign: 'center',
+                                        color: '#64748b',
+                                        fontWeight: 700
+                                    }}>
+                                        {team.name === 'Oregon' && team.sponsor?.name === 'Nike'
+                                            ? 'Lifetime Legacy Agreement'
+                                            : `Active Contract (${team.sponsorContractYearsRemaining} Years Left)`
+                                        }
+                                    </div>
+                                ) : (
+                                    <div style={{ 
+                                        background: '#fff', 
+                                        border: '2px solid #e2e8f0', 
+                                        borderRadius: '12px', 
+                                        padding: '24px', 
+                                        textAlign: 'center',
+                                        color: '#94a3b8',
+                                        fontWeight: 600,
+                                        fontStyle: 'italic'
+                                    }}>
+                                        No active offer from {selectedBrandName}. 
+                                        Increase your prestige to attract their attention.
+                                    </div>
+                                )}
+
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         </div>
     );
-};
-
-const styles: { [key: string]: React.CSSProperties } = {
-    title: {
-        fontFamily: "'Press Start 2P', cursive",
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-    },
-    tableContainer: {
-        overflowX: 'auto',
-    },
-    table: {
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '0.7rem',
-        color: '#000000',
-        minWidth: '600px',
-    },
-    th: {
-        padding: '8px',
-        border: '1px solid #000',
-        textAlign: 'left',
-    },
-    td: {
-        padding: '8px',
-        border: '1px solid #ddd',
-        verticalAlign: 'middle',
-        color: '#000000',
-    },
-    smallButton: {
-        fontFamily: "'Press Start 2P', cursive",
-        fontSize: '0.5rem',
-        padding: '4px 6px',
-        borderWidth: '2px',
-        borderStyle: 'solid',
-        borderColor: '#FFFFFF #808080 #808080 #FFFFFF',
-        backgroundColor: '#C0C0C0',
-        color: '#000000',
-        cursor: 'pointer',
-    },
-    modalOverlay: {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-    },
-    sponsorModalContent: {
-        backgroundColor: '#C0C0C0',
-        padding: '20px',
-        border: '4px solid',
-        borderColor: '#FFFFFF #808080 #808080 #FFFFFF',
-        width: '95%',
-        maxWidth: '1200px',
-        maxHeight: '90vh',
-        overflowY: 'auto',
-        position: 'relative',
-    },
-    modalCloseButton: {
-        position: 'absolute',
-        top: '5px',
-        right: '5px',
-        fontFamily: "'Press Start 2P', cursive",
-        backgroundColor: '#C0C0C0',
-        border: '2px solid',
-        borderColor: '#FFFFFF #808080 #808080 #FFFFFF',
-        width: '25px',
-        height: '25px',
-        cursor: 'pointer',
-    },
-    sponsorCard: {
-        borderWidth: '2px',
-        borderStyle: 'solid',
-        borderColor: '#CCCCCC',
-        borderRadius: '4px',
-        padding: '15px',
-        marginBottom: '10px',
-        backgroundColor: '#F5F5F5',
-        fontSize: '0.6rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '5px',
-    },
 };
 
 export default SponsorModal;
